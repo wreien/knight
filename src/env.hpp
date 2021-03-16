@@ -42,7 +42,7 @@ namespace kn::eval {
     Value evaluate() const override {
       return Environment::get().value(data);
     }
-    void dump() const override;
+    void dump(std::ostream& os) const override;
 
     Variable data;
   };

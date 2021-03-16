@@ -14,7 +14,7 @@ namespace kn::eval {
   struct Expression {
     virtual ~Expression();
     virtual Value evaluate() const = 0;
-    virtual void dump() const = 0;
+    virtual void dump(std::ostream& os) const = 0;
   };
   using ExpressionPtr = std::unique_ptr<const Expression>;
 
@@ -54,6 +54,8 @@ namespace kn::eval {
         os << "Number(" << *x << ")";
       else if (auto x = std::get_if<String>(&value))
         os << "String(" << *x << ")";
+      else if (auto x = std::get_if<Block>(&value))
+        x->expr->dump(os);
       else
         os << "???";
       return os;

@@ -5,7 +5,8 @@
 
 namespace {
   kn::eval::Number string_to_number(const std::string& s) {
-    auto i = s.find_first_not_of("\t\n\r ");
+    // not in spec, but tests require "+34" to be parsed as 34
+    auto i = s.find_first_not_of("\t\n\r +");
 
     // explicitly do no error checking
     kn::eval::Number result = 0;
@@ -21,7 +22,7 @@ namespace kn::eval {
   Boolean Value::to_bool() const {
     if (auto x = std::get_if<Boolean>(this)) return *x;
     if (auto x = std::get_if<Number>(this)) return *x != 0;
-    if (auto x = std::get_if<String>(this)) return x->empty();
+    if (auto x = std::get_if<String>(this)) return not x->empty();
     return false;  // null
   }
 

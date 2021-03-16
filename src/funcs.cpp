@@ -39,13 +39,13 @@ namespace {
         }
       }
 
-      void dump() const override {
-        std::cout << "Function(" << A;
+      void dump(std::ostream& os) const override {
+        os << "Function(" << A;
         for (auto&& c : children) {
-          std::cout << " ";
-          c->dump();
+          os << " ";
+          c->dump(os);
         }
-        std::cout << ")";
+        os << ")";
       }
 
       F func;
@@ -63,10 +63,11 @@ namespace {
       return data;
     }
 
-    void dump() const override {
-      std::cout << "Block(";
-      data.expr->dump();
-      std::cout << ")";
+    void dump(std::ostream& os) const override {
+      // why not block? if you insist...
+      os << "Function(";
+      data.expr->dump(os);
+      os << ")";
     }
 
     kn::eval::Block data;
@@ -196,7 +197,7 @@ namespace kn::funcs {
 
   ExpressionPtr dump(ParseInfo info) {
     return make_expression<1>(std::move(info), [](auto&& expr) {
-      expr->dump(); return Null{};
+      std::cout << expr->evaluate(); return Null{};
     });
   }
 

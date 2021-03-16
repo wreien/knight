@@ -17,10 +17,8 @@ std::string kn::funcs::open_shell(std::string command) {
 
   std::string result;
   char buffer[4096];
-  while (auto read = ::fread(buffer, sizeof buffer, 1, stream.get()))
+  while (auto read = ::fread(buffer, 1, sizeof buffer, stream.get()))
     result.append(buffer, read);
-  
-  std::cout << "got result: " << result;
 
   return result;
 }

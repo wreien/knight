@@ -35,8 +35,8 @@ namespace kn::eval {
     : data(Environment::get().get_variable(name))
   {}
 
-  void IdentExpr::dump() const {
-    std::cout << "Identifier(" << Environment::get().nameof(data) << ")";
+  void IdentExpr::dump(std::ostream& os) const {
+    os << "Identifier(" << Environment::get().nameof(data) << ")";
   }
 
 }

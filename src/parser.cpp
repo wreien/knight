@@ -7,7 +7,7 @@
 #include "value.hpp"
 
 #include <array>
-#include <iostream>
+#include <ostream>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -73,8 +73,8 @@ namespace {
     kn::eval::Value evaluate() const override {
       return kn::eval::Null{};
     }
-    void dump() const override {
-      std::cout << "Null()";
+    void dump(std::ostream& os) const override {
+      os << "Null()";
     }
   };
 
@@ -85,8 +85,8 @@ namespace {
     kn::eval::Value evaluate() const override {
       return data;
     }
-    void dump() const override {
-      std::cout << data;
+    void dump(std::ostream& os) const override {
+      os << data;
     }
     kn::eval::Value data;
   };
