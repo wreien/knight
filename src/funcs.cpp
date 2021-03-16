@@ -20,10 +20,6 @@
 
 namespace {
 
-  [[noreturn]] void unimplemented(const kn::ParseInfo& info) {
-    throw kn::Error(info.token->range(), "error: unimplemented function");
-  }
-
   template <std::size_t A, typename F>
   auto make_expression(kn::ParseInfo&& info, F f) {
     using namespace kn::eval;
@@ -174,7 +170,11 @@ namespace kn::funcs {
     });
   }
 
-  ExpressionPtr shell(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr shell(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
+      return open_shell(expr->evaluate().to_string());
+    });
+  }
 
   ExpressionPtr quit(ParseInfo info) {
     return make_expression<1>(std::move(info), [](auto&& expr) {
@@ -349,12 +349,28 @@ namespace kn::funcs {
     });
   }
 
-  ExpressionPtr get(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr get(ParseInfo info) {
+    return make_expression<3>(std::move(info), [](auto&& s, auto&& i, auto&& c) {
+      auto str = s->evaluate().to_string();
+      auto idx = static_cast<std::size_t>(i->evaluate().to_number());
+      auto cnt = static_cast<std::size_t>(c->evaluate().to_number());
+      return str.substr(idx, cnt);
+    });
+  }
 
 
   // arity 4
 
 
-  ExpressionPtr substitute(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr substitute(ParseInfo info) {
+    return make_expression<4>(std::move(info),
+      [](auto&& s, auto&& i, auto&& c, auto&& r) {
+        auto str = s->evaluate().to_string();
+        auto idx = static_cast<std::size_t>(i->evaluate().to_number());
+        auto cnt = static_cast<std::size_t>(c->evaluate().to_number());
+        auto replace = r->evaluate().to_string();
+        return str.replace(idx, cnt, replace);
+      });
+  }
 
 }

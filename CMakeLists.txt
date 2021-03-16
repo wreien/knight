@@ -25,6 +25,12 @@ target_sources(knight PRIVATE
     src/value.cpp
 )
 
+if (WIN32)
+    target_sources(knight PRIVATE src/shell_win32.cpp)
+else()
+    target_sources(knight PRIVATE src/shell_posix.cpp)
+endif()
+
 if (MSVC)
     target_compile_options(knight PRIVATE 
         /W4 /permissive-)

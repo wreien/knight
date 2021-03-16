@@ -8,6 +8,8 @@ namespace kn::funcs {
 
   using eval::ExpressionPtr;
 
+  std::string open_shell(std::string command);
+
   // arity 0
 
   ExpressionPtr true_(ParseInfo info);
