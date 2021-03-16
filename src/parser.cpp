@@ -9,53 +9,56 @@
 #include <array>
 #include <limits>
 #include <sstream>
+#include <iostream>
+#include <vector>
 
 using kn::lexer::TokenIter;
 
 namespace {
 
-  using parse_fn = kn::ExpressionPtr(const kn::ParseInfo&);
-  using function_table =
-    std::array<parse_fn*, std::numeric_limits<unsigned char>::max()>;
+  using parse_fn = kn::ExpressionPtr(kn::ParseInfo);
+  using function_table = std::array<
+    std::pair<int, parse_fn*>,
+    std::numeric_limits<unsigned char>::max()>;
 
   auto functions = []() -> function_table {
-    function_table table = { nullptr };
+    function_table table = {};
 
-    table['T'] = kn::funcs::true_;
-    table['F'] = kn::funcs::false_;
-    table['N'] = kn::funcs::null;
-    table['P'] = kn::funcs::prompt;
-    table['R'] = kn::funcs::random;
+    table['T'] = { 0, kn::funcs::true_ };
+    table['F'] = { 0, kn::funcs::false_ };
+    table['N'] = { 0, kn::funcs::null };
+    table['P'] = { 0, kn::funcs::prompt };
+    table['R'] = { 0, kn::funcs::random };
 
-    table['E'] = kn::funcs::eval;
-    table['B'] = kn::funcs::block;
-    table['C'] = kn::funcs::call;
-    table['`'] = kn::funcs::shell;
-    table['Q'] = kn::funcs::quit;
-    table['!'] = kn::funcs::negate;
-    table['L'] = kn::funcs::length;
-    table['D'] = kn::funcs::dump;
-    table['O'] = kn::funcs::output;
+    table['E'] = { 1, kn::funcs::eval };
+    table['B'] = { 1, kn::funcs::block };
+    table['C'] = { 1, kn::funcs::call };
+    table['`'] = { 1, kn::funcs::shell };
+    table['Q'] = { 1, kn::funcs::quit };
+    table['!'] = { 1, kn::funcs::negate };
+    table['L'] = { 1, kn::funcs::length };
+    table['D'] = { 1, kn::funcs::dump };
+    table['O'] = { 1, kn::funcs::output };
 
-    table['+'] = kn::funcs::plus;
-    table['-'] = kn::funcs::minus;
-    table['*'] = kn::funcs::multiplies;
-    table['/'] = kn::funcs::divides;
-    table['%'] = kn::funcs::modulus;
-    table['^'] = kn::funcs::exponent;
-    table['<'] = kn::funcs::less;
-    table['>'] = kn::funcs::greater;
-    table['?'] = kn::funcs::identity;  // TODO: better name
-    table['|'] = kn::funcs::disjunct;
-    table['&'] = kn::funcs::conjunct;
-    table[';'] = kn::funcs::sequence;
-    table['='] = kn::funcs::assign;
-    table['W'] = kn::funcs::while_;
+    table['+'] = { 2, kn::funcs::plus };
+    table['-'] = { 2, kn::funcs::minus };
+    table['*'] = { 2, kn::funcs::multiplies };
+    table['/'] = { 2, kn::funcs::divides };
+    table['%'] = { 2, kn::funcs::modulus };
+    table['^'] = { 2, kn::funcs::exponent };
+    table['<'] = { 2, kn::funcs::less };
+    table['>'] = { 2, kn::funcs::greater };
+    table['?'] = { 2, kn::funcs::equals };
+    table['|'] = { 2, kn::funcs::disjunct };
+    table['&'] = { 2, kn::funcs::conjunct };
+    table[';'] = { 2, kn::funcs::sequence };
+    table['='] = { 2, kn::funcs::assign };
+    table['W'] = { 2, kn::funcs::while_ };
 
-    table['I'] = kn::funcs::ifelse;
-    table['G'] = kn::funcs::get;
+    table['I'] = { 3, kn::funcs::ifelse };
+    table['G'] = { 3, kn::funcs::get };
 
-    table['S'] = kn::funcs::substitute;
+    table['S'] = { 4, kn::funcs::substitute };
 
     return table;
   }();
@@ -68,24 +71,24 @@ namespace {
   using namespace kn::eval;
   namespace lex = kn::lexer;
 
-  [[noreturn]] void missing_argument(const kn::ParseInfo& info) {
-    std::ostringstream oss;
-    oss << "error: not enough arguments for: " << *info.curr_expr;
-    throw kn::Error(info.curr_expr->range(), oss.str());
-  }
+  struct NullExpr : kn::Expression {
+    Value evaluate() const override {
+      return Null{};
+    }
+    void dump() const override {
+      std::cout << "Null()";
+    }
+  };
 
-  struct StringLitExpr : kn::Expression {
-    StringLitExpr(lex::StringLiteral s) : data(String(s.data)) {}
+  struct LitExpr : kn::Expression {
+    LitExpr(lex::StringLiteral s) : data(String(s.data)) {}
+    LitExpr(lex::NumericLiteral n) : data(Number(n.data)) {}
+
     Value evaluate() const override {
       return data;
     }
-    Value data;
-  };
-
-  struct NumericLitExpr : kn::Expression {
-    NumericLitExpr(lex::NumericLiteral n) : data(Number(n.data)) {}
-    Value evaluate() const override {
-      return data;
+    void dump() const override {
+      std::cout << data;
     }
     Value data;
   };
@@ -100,36 +103,65 @@ namespace kn {
 
   Expression::~Expression() = default;
 
-  ExpressionPtr parse_impl(const ParseInfo& info) {
-    auto& it = *info.iter;
-    if (auto x = it->as_string_lit()) {
-      return std::make_unique<StringLitExpr>(*x);
-    }
-    if (auto x = it->as_numeric_lit()) {
-      return std::make_unique<NumericLitExpr>(*x);
-    }
-    if (auto x = it->as_function()) {
-      if (auto f = functions[static_cast<unsigned char>(x->id)]) {
-        return f(ParseInfo{ info.iter, *info.iter, info.end });
-      } else {
-        throw kn::Error(it->range(), "error: unknown function");
+  ExpressionPtr parse(const std::vector<lex::Token>& tokens) {
+    if (tokens.empty())
+      return std::make_unique<NullExpr>();
+
+    // initialize the stack with a no-op
+    std::vector<ParseInfo> stack;
+    stack.push_back({ tokens.end(), 0, {}, 1, 0 });
+    const auto top = [&stack]() -> decltype(auto) { return stack.back(); };
+
+    // if we hit end while stack still has stuff:
+    //   - we had an expression with missing arguments
+    // if we run out of stack while tokens still have stuff:
+    //   - we have random junk on the end
+    // we finish iff (it == tokens.end() and expr_stack.size() == 1)
+    auto it = tokens.begin();
+    for (; it != tokens.end(); ++it) {
+      if (auto x = it->as_string_lit()) {
+        top().add_arg(std::make_unique<LitExpr>(*x));
+      }
+      else if (auto x = it->as_numeric_lit()) {
+        top().add_arg(std::make_unique<LitExpr>(*x));
+      }
+      else if (auto x = it->as_function()) {
+        auto f_id = static_cast<std::size_t>(x->id);
+        if (auto [arity, fn] = functions[f_id]; fn) {
+          if (arity == 0) {
+            top().add_arg(fn({ it, 0, {}, 0, 0 }));
+          } else {
+            stack.push_back({ it, f_id, {}, arity, 0 });
+          }
+        } else {
+          throw kn::Error(it->range(), "error: unknown function");
+        }
+      }
+      else if ([[maybe_unused]] auto x = it->as_ident()) {
+        throw kn::Error(it->range(), "error: unimplemented");
+      }
+      else {
+        throw kn::Error(it->range(), "error: unknown token type");
+      }
+
+      // fold in completed stacks
+      while (top().is_completed()) {
+        if (stack.size() == 1) {
+          // hit bottom of stack, we're done
+          if (++it != tokens.end())
+            throw kn::Error(it->pos(), "error: unparsed tokens");
+          else
+            return std::move(top().args[0]);
+        } else {
+          // pop the stack off, run the function, add to previous layer
+          auto expr = functions[top().func_id].second(std::move(top()));
+          stack.pop_back();
+          top().add_arg(std::move(expr));
+        }
       }
     }
-    std::ostringstream oss;
-    oss << "error: unimplemented: " << *it;
-    throw kn::Error(it->range(), oss.str());
-  }
 
-  ExpressionPtr parse(const std::vector<lex::Token>& tokens) {
-    auto iter = tokens.begin();
-    return parse_impl(ParseInfo{ &iter, iter, tokens.end() });
-  }
-
-  ExpressionPtr parse_arg(const ParseInfo& info) {
-    if (*info.iter == info.end)
-      missing_argument(info);
-    ++*info.iter;
-    return parse_impl(info);
+    throw kn::Error(stack.back().token->pos(), "error: unexpected EOF");
   }
 
 }

@@ -9,49 +9,49 @@ namespace kn::funcs {
 
   // arity 0
 
-  ExpressionPtr true_(const ParseInfo& info);
-  ExpressionPtr false_(const ParseInfo& info);
-  ExpressionPtr null(const ParseInfo& info);
-  ExpressionPtr prompt(const ParseInfo& info);
-  ExpressionPtr random(const ParseInfo& info);
+  ExpressionPtr true_(ParseInfo info);
+  ExpressionPtr false_(ParseInfo info);
+  ExpressionPtr null(ParseInfo info);
+  ExpressionPtr prompt(ParseInfo info);
+  ExpressionPtr random(ParseInfo info);
 
   // arity 1
 
-  ExpressionPtr eval(const ParseInfo& info);
-  ExpressionPtr block(const ParseInfo& info);
-  ExpressionPtr call(const ParseInfo& info);
-  ExpressionPtr shell(const ParseInfo& info);
-  ExpressionPtr quit(const ParseInfo& info);
-  ExpressionPtr negate(const ParseInfo& info);
-  ExpressionPtr length(const ParseInfo& info);
-  ExpressionPtr dump(const ParseInfo& info);
-  ExpressionPtr output(const ParseInfo& info);
+  ExpressionPtr eval(ParseInfo info);
+  ExpressionPtr block(ParseInfo info);
+  ExpressionPtr call(ParseInfo info);
+  ExpressionPtr shell(ParseInfo info);
+  ExpressionPtr quit(ParseInfo info);
+  ExpressionPtr negate(ParseInfo info);
+  ExpressionPtr length(ParseInfo info);
+  ExpressionPtr dump(ParseInfo info);
+  ExpressionPtr output(ParseInfo info);
 
   // arity 2
 
-  ExpressionPtr plus(const ParseInfo& info);
-  ExpressionPtr minus(const ParseInfo& info);
-  ExpressionPtr multiplies(const ParseInfo& info);
-  ExpressionPtr divides(const ParseInfo& info);
-  ExpressionPtr modulus(const ParseInfo& info);
-  ExpressionPtr exponent(const ParseInfo& info);
-  ExpressionPtr less(const ParseInfo& info);
-  ExpressionPtr greater(const ParseInfo& info);
-  ExpressionPtr identity(const ParseInfo& info);
-  ExpressionPtr conjunct(const ParseInfo& info);
-  ExpressionPtr disjunct(const ParseInfo& info);
-  ExpressionPtr sequence(const ParseInfo& info);
-  ExpressionPtr assign(const ParseInfo& info);
-  ExpressionPtr while_(const ParseInfo& info);
+  ExpressionPtr plus(ParseInfo info);
+  ExpressionPtr minus(ParseInfo info);
+  ExpressionPtr multiplies(ParseInfo info);
+  ExpressionPtr divides(ParseInfo info);
+  ExpressionPtr modulus(ParseInfo info);
+  ExpressionPtr exponent(ParseInfo info);
+  ExpressionPtr less(ParseInfo info);
+  ExpressionPtr greater(ParseInfo info);
+  ExpressionPtr equals(ParseInfo info);
+  ExpressionPtr conjunct(ParseInfo info);
+  ExpressionPtr disjunct(ParseInfo info);
+  ExpressionPtr sequence(ParseInfo info);
+  ExpressionPtr assign(ParseInfo info);
+  ExpressionPtr while_(ParseInfo info);
 
   // arity 3
 
-  ExpressionPtr ifelse(const ParseInfo& info);
-  ExpressionPtr get(const ParseInfo& info);
+  ExpressionPtr ifelse(ParseInfo info);
+  ExpressionPtr get(ParseInfo info);
 
   // arity 4
 
-  ExpressionPtr substitute(const ParseInfo& info);
+  ExpressionPtr substitute(ParseInfo info);
 }
 
 #endif // KNIGHT_FUNCS_HPP_INCLUDED

@@ -1,8 +1,11 @@
 #include "funcs.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
 #include <random>
 #include <string>
 #include <tuple>
@@ -13,17 +16,18 @@
 namespace {
 
   [[noreturn]] void unimplemented(const kn::ParseInfo& info) {
-    throw kn::Error((*info.iter)->range(), "error: unimplemented");
+    throw kn::Error(info.token->range(), "error: unimplemented function");
   }
 
-  template <typename F, typename... Ts>
-  auto make_expression(F f, Ts... children) {
+  template <std::size_t A, typename F>
+  auto make_expression(kn::ParseInfo&& info, F f) {
     struct FunctionExpr : kn::Expression {
-      FunctionExpr(F&& func, Ts&&... children)
-        : func(std::move(func)), children(std::move(children)...)
-      {}
+      FunctionExpr(F&& func, kn::ExpressionPtr* args) : func(std::move(func)) {
+        std::copy(std::move_iterator(args), std::move_iterator(args + A),
+                  children.begin());
+      }
 
-      kn::eval::Value evaluate() const {
+      kn::eval::Value evaluate() const override {
         if constexpr (std::is_void_v<decltype(std::apply(func, children))>) {
           std::apply(func, children);
           return kn::eval::Null{};
@@ -32,36 +36,48 @@ namespace {
         }
       }
 
+      void dump() const override {
+        std::cout << "Function(" << A;
+        for (auto&& c : children) {
+          std::cout << " ";
+          c->dump();
+        }
+        std::cout << ")";
+      }
+
       F func;
-      std::tuple<Ts...> children;
+      std::array<kn::ExpressionPtr, A> children;
     };
 
-    return std::make_unique<FunctionExpr>(std::move(f), std::move(children)...);
+    assert(info.arity == A);
+    return std::make_unique<FunctionExpr>(std::move(f), info.args);
   }
 }
 
 namespace kn::funcs {
 
+  using namespace kn::eval;
+
   // arity 0
 
-  ExpressionPtr true_(const ParseInfo&) {
-    return make_expression([]{ return true; });
+  ExpressionPtr true_(ParseInfo info) {
+    return make_expression<0>(std::move(info), []{ return true; });
   }
 
-  ExpressionPtr false_(const ParseInfo&) {
-    return make_expression([]{ return false; });
+  ExpressionPtr false_(ParseInfo info) {
+    return make_expression<0>(std::move(info), []{ return false; });
   }
 
-  ExpressionPtr null(const ParseInfo&) {
-    return make_expression([]{ return kn::eval::Null{}; });
+  ExpressionPtr null(ParseInfo info) {
+    return make_expression<0>(std::move(info), []{ return Null{}; });
   }
 
-  ExpressionPtr prompt(const ParseInfo&) {
-    return make_expression([]{
+  ExpressionPtr prompt(ParseInfo info) {
+    return make_expression<0>(std::move(info), []{
       std::string line; std::getline(std::cin, line); return line; });
   }
 
-  ExpressionPtr random(const ParseInfo&) {
+  ExpressionPtr random(ParseInfo info) {
     thread_local auto generator = []{
       std::random_device rd;
       std::mt19937 gen(rd());
@@ -69,90 +85,171 @@ namespace kn::funcs {
     }();
     thread_local auto dist = std::uniform_int_distribution(
       eval::Number{}, std::numeric_limits<eval::Number>::max());
-    return make_expression([]{ return dist(generator); });
+    return make_expression<0>(std::move(info), []{ return dist(generator); });
   }
 
 
   // arity 1
 
 
-  ExpressionPtr eval(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr block(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr call(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr shell(const ParseInfo& info) { unimplemented(info); }
+  ExpressionPtr eval(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr block(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr call(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr shell(ParseInfo info) { unimplemented(info); }
 
-  ExpressionPtr quit(const ParseInfo& info) {
-    auto status_expr = kn::parse_arg(info);
-    return make_expression([](const auto& status_expr) {
-      std::exit(status_expr->evaluate().to_number());
-    }, std::move(status_expr));
+  ExpressionPtr quit(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
+      std::exit(expr->evaluate().to_number());
+    });
   }
 
-  ExpressionPtr negate(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr length(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr dump(const ParseInfo& info) { unimplemented(info); }
+  ExpressionPtr negate(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
+      return not expr->evaluate().to_bool();
+    });
+  }
 
-  ExpressionPtr output(const ParseInfo& info) {
-    auto str_expr = kn::parse_arg(info);
-    return make_expression([](const auto& str_expr) {
+  ExpressionPtr length(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
+      return static_cast<Number>(expr->evaluate().to_string().length());
+    });
+  }
+
+  ExpressionPtr dump(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
+      expr->dump(); return Null{};
+    });
+  }
+
+  ExpressionPtr output(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
       // by spec always flush output
-      auto str = str_expr->evaluate().to_string();
+      auto str = expr->evaluate().to_string();
       if (not str.empty() and str.back() == '\\') {
         str.pop_back();
         std::cout << str << std::flush;
       } else {
         std::cout << str << '\n' << std::flush;
       }
-    }, std::move(str_expr));
+    });
   }
 
 
   // arity 2
 
 
-  ExpressionPtr plus(const ParseInfo& info) {
-    auto lhs = kn::parse_arg(info);
-    auto rhs = kn::parse_arg(info);
-    return make_expression([](const auto& lhs, const auto& rhs) -> eval::Value {
+  ExpressionPtr plus(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
       auto lhs_eval = lhs->evaluate();
       if (lhs_eval.is_number()) {
         auto lhs_val = lhs_eval.to_number();
         auto rhs_val = rhs->evaluate().to_number();
-        return lhs_val + rhs_val;
+        return Value(lhs_val + rhs_val);
       } else if (lhs_eval.is_string()) {
         auto lhs_val = lhs_eval.to_string();
         auto rhs_val = rhs->evaluate().to_string();
-        return lhs_val + rhs_val;
+        return Value(lhs_val + rhs_val);
       } else {
         // TODO: propagate location info and throw error
         assert(false);
       }
-    }, std::move(lhs), std::move(rhs));
+    });
   }
 
-  ExpressionPtr minus(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr multiplies(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr divides(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr modulus(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr exponent(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr less(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr greater(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr identity(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr conjunct(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr disjunct(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr sequence(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr assign(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr while_(const ParseInfo& info) { unimplemented(info); }
+  ExpressionPtr minus(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr multiplies(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr divides(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr modulus(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr exponent(ParseInfo info) { unimplemented(info); }
+
+  ExpressionPtr less(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
+      auto lhs_eval = lhs->evaluate();
+      if (lhs_eval.is_number()) {
+        auto lhs_val = lhs_eval.to_number();
+        auto rhs_val = rhs->evaluate().to_number();
+        return lhs_val < rhs_val;
+      } else if (lhs_eval.is_string()) {
+        auto lhs_val = lhs_eval.to_string();
+        auto rhs_val = rhs->evaluate().to_string();
+        return lhs_val < rhs_val;
+      } else if (lhs_eval.is_bool()) {
+        auto lhs_val = lhs_eval.to_bool();
+        auto rhs_val = rhs->evaluate().to_bool();
+        return not lhs_val and rhs_val;
+      } else {
+        // TODO: propagate location info and throw error
+        assert(false);
+      }
+    });
+  }
+
+  ExpressionPtr greater(ParseInfo info) { unimplemented(info); }
+
+  ExpressionPtr equals(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
+      auto lhs_val = lhs->evaluate();
+      auto rhs_val = rhs->evaluate();
+      return lhs_val == rhs_val;
+    });
+  }
+
+  ExpressionPtr conjunct(ParseInfo info) {
+    // the spec is very unclear about this
+    // I'm going by the spirit of the spec, not the letter
+    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
+      auto lhs_val = lhs->evaluate();
+      if (not lhs_val.to_bool())
+        return lhs_val;
+      return rhs->evaluate();
+    });
+  }
+
+  ExpressionPtr disjunct(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
+      auto lhs_val = lhs->evaluate();
+      if (lhs_val.to_bool())
+        return lhs_val;
+      return rhs->evaluate();
+    });
+  }
+
+  ExpressionPtr sequence(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
+      // ignore return value
+      lhs->evaluate();
+      return rhs->evaluate();
+    });
+  }
+
+  ExpressionPtr assign(ParseInfo info) { unimplemented(info); }
+
+  ExpressionPtr while_(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& cond, auto&& block) {
+      while (cond->evaluate().to_bool())
+        block->evaluate();
+      return Null{};
+    });
+  }
 
 
   // arity 3
 
 
-  ExpressionPtr ifelse(const ParseInfo& info) { unimplemented(info); }
-  ExpressionPtr get(const ParseInfo& info) { unimplemented(info); }
+  ExpressionPtr ifelse(ParseInfo info) {
+    return make_expression<3>(std::move(info), [](auto&& cond, auto&& t, auto&& f) {
+      if (cond->evaluate().to_bool()) {
+        return t->evaluate();
+      } else {
+        return f->evaluate();
+      }
+    });
+  }
+
+  ExpressionPtr get(ParseInfo info) { unimplemented(info); }
 
   // arity 4
 
-  ExpressionPtr substitute(const ParseInfo& info) { unimplemented(info); }
+  ExpressionPtr substitute(ParseInfo info) { unimplemented(info); }
 
 }

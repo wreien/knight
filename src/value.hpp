@@ -9,7 +9,10 @@
 namespace kn::eval {
 
   // basic types
-  struct Null { };
+  struct Null { 
+    friend bool operator==(Null, Null) noexcept { return true; } 
+  };
+
   using Boolean = bool;
   using Number = int;
   using String = std::string;

@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
 
     auto expr = kn::parse(tokens);
     auto value = expr->evaluate();
-    std::cout << "result: " << value;
+    std::cout << "result: " << value << '\n';
   } catch (const kn::Error& err) {
     std::cout << err.what() << '\n';
   }
