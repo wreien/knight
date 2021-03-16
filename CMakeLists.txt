@@ -22,6 +22,7 @@ target_sources(knight PRIVATE
     src/parser.hpp
     src/sourcepos.hpp
     src/value.hpp
+    src/value.cpp
 )
 
 if (MSVC)

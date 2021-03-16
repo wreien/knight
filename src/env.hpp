@@ -36,7 +36,7 @@ namespace kn::eval {
     std::vector<std::string> names;
   };
 
-  struct IdentExpr : kn::Expression {
+  struct IdentExpr : Expression {
     IdentExpr(const std::string& name);
 
     Value evaluate() const override {

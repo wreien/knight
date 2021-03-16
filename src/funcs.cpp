@@ -26,13 +26,15 @@ namespace {
 
   template <std::size_t A, typename F>
   auto make_expression(kn::ParseInfo&& info, F f) {
-    struct FunctionExpr : kn::Expression {
-      FunctionExpr(F&& func, kn::ExpressionPtr* args) : func(std::move(func)) {
+    using namespace kn::eval;
+
+    struct FunctionExpr : Expression {
+      FunctionExpr(F&& func, ExpressionPtr* args) : func(std::move(func)) {
         std::copy(std::move_iterator(args), std::move_iterator(args + A),
                   children.begin());
       }
 
-      kn::eval::Value evaluate() const override {
+      Value evaluate() const override {
         if constexpr (std::is_void_v<decltype(std::apply(func, children))>) {
           std::apply(func, children);
           return kn::eval::Null{};
@@ -51,12 +53,28 @@ namespace {
       }
 
       F func;
-      std::array<kn::ExpressionPtr, A> children;
+      std::array<ExpressionPtr, A> children;
     };
 
     assert(info.arity == A);
     return std::make_unique<FunctionExpr>(std::move(f), info.args);
   }
+
+  struct BlockExpr : kn::eval::Expression {
+    BlockExpr(kn::eval::ExpressionPtr expr) : data(std::move(expr)) {}
+
+    kn::eval::Value evaluate() const override {
+      return data;
+    }
+
+    void dump() const override {
+      std::cout << "Block(";
+      data.expr->dump();
+      std::cout << ")";
+    }
+
+    kn::eval::Block data;
+  };
 
   template <typename F>
   auto make_binary_math_op(kn::ParseInfo&& info, F f) {
@@ -144,8 +162,17 @@ namespace kn::funcs {
     });
   }
 
-  ExpressionPtr block(ParseInfo info) { unimplemented(info); }
-  ExpressionPtr call(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr block(ParseInfo info) {
+    assert(info.arity == 1);
+    return std::make_unique<BlockExpr>(std::move(info.args[0]));
+  }
+
+  ExpressionPtr call(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
+      auto block = expr->evaluate().to_block();
+      return block.expr->evaluate();
+    });
+  }
 
   ExpressionPtr shell(ParseInfo info) { unimplemented(info); }
 
@@ -291,7 +318,7 @@ namespace kn::funcs {
 
   ExpressionPtr assign(ParseInfo info) {
     return make_expression<2>(std::move(info), [](auto&& var, auto&& expr) {
-      if (auto id = dynamic_cast<IdentExpr*>(var.get())) {
+      if (auto id = dynamic_cast<const IdentExpr*>(var.get())) {
         return Environment::get().assign(id->data, expr->evaluate());
       } else {
         // TODO: propagate location info and throw

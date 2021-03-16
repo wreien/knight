@@ -1,23 +1,37 @@
 #ifndef KNIGHT_VALUE_HPP_INCLUDED
 #define KNIGHT_VALUE_HPP_INCLUDED
 
-#include <charconv>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <variant>
 
 namespace kn::eval {
 
-  // basic types
-  struct Null {
-    friend bool operator==(Null, Null) noexcept { return true; }
-  };
+  struct Value;
 
+  // expressions
+  struct Expression {
+    virtual ~Expression();
+    virtual Value evaluate() const = 0;
+    virtual void dump() const = 0;
+  };
+  using ExpressionPtr = std::unique_ptr<const Expression>;
+
+  // basic types
   using Boolean = bool;
   using Number = int;
   using String = std::string;
+  struct Null {
+    friend bool operator==(Null, Null) noexcept { return true; }
+  };
+  struct Block {
+    friend bool operator==(Block, Block) noexcept { return false; }
+    Block(ExpressionPtr expr) : expr(expr.release()) {}
+    std::shared_ptr<const Expression> expr;
+  };
 
-  struct Value : std::variant<Null, Boolean, Number, String> {
+  struct Value : std::variant<Null, Boolean, Number, String, Block> {
     using variant::variant;
 
     bool is_null() const noexcept { return std::holds_alternative<Null>(*this); }
@@ -25,34 +39,11 @@ namespace kn::eval {
     bool is_number() const noexcept { return std::holds_alternative<Number>(*this); }
     bool is_string() const noexcept { return std::holds_alternative<String>(*this); }
 
-    Boolean to_bool() const {
-      if (auto x = std::get_if<Boolean>(this)) return *x;
-      if (auto x = std::get_if<Number>(this)) return *x != 0;
-      if (auto x = std::get_if<String>(this)) return x->empty();
-      return false;  // null
-    }
-
-    Number to_number() const {
-      if (auto x = std::get_if<Boolean>(this)) return *x ? 1 : 0;
-      if (auto x = std::get_if<Number>(this)) return *x;
-      if (auto x = std::get_if<String>(this)) return string_to_number(*x);
-      return 0;  // null
-    }
-
-    String to_string() const& {
-      if (auto x = std::get_if<Boolean>(this)) return *x ? "true" : "false";
-      if (auto x = std::get_if<Number>(this)) return std::to_string(*x);
-      if (auto x = std::get_if<String>(this)) return *x;
-      return "null";  // null
-    }
-
-    // optimise common case of copying from expiring value
-    String to_string() && {
-      if (auto x = std::get_if<Boolean>(this)) return *x ? "true" : "false";
-      if (auto x = std::get_if<Number>(this)) return std::to_string(*x);
-      if (auto x = std::get_if<String>(this)) return std::move(*x);
-      return "null";  // null
-    }
+    Boolean to_bool() const;
+    Number to_number() const;
+    String to_string() const&;
+    String to_string() &&;
+    Block to_block() const;
 
     friend std::ostream& operator<<(std::ostream& os, const Value& value) {
       if (std::holds_alternative<Null>(value))
@@ -66,16 +57,6 @@ namespace kn::eval {
       else
         os << "???";
       return os;
-    }
-
-  private:
-    static Number string_to_number(const std::string& s) {
-      auto i = s.find_first_not_of("\t\n\r ");
-
-      // explicitly do no error checking
-      Number result = 0;
-      std::from_chars(s.data() + i, s.data() + s.size(), result);
-      return result;
     }
   };
 

@@ -6,18 +6,18 @@
 #include "lexer.hpp"
 #include "value.hpp"
 
-#include <string>
 #include <array>
+#include <iostream>
 #include <limits>
 #include <sstream>
-#include <iostream>
+#include <string>
 #include <vector>
 
 using kn::lexer::TokenIter;
 
 namespace {
 
-  using parse_fn = kn::ExpressionPtr(kn::ParseInfo);
+  using parse_fn = kn::eval::ExpressionPtr(kn::ParseInfo);
   using function_table = std::array<
     std::pair<int, parse_fn*>,
     std::numeric_limits<unsigned char>::max()>;
@@ -69,38 +69,33 @@ namespace {
 
 namespace {
 
-  using namespace kn::eval;
-  namespace lex = kn::lexer;
-
-  struct NullExpr : kn::Expression {
-    Value evaluate() const override {
-      return Null{};
+  struct NullExpr : kn::eval::Expression {
+    kn::eval::Value evaluate() const override {
+      return kn::eval::Null{};
     }
     void dump() const override {
       std::cout << "Null()";
     }
   };
 
-  struct LitExpr : kn::Expression {
-    LitExpr(lex::StringLiteral s) : data(String(s.data)) {}
-    LitExpr(lex::NumericLiteral n) : data(Number(n.data)) {}
+  struct LitExpr : kn::eval::Expression {
+    LitExpr(kn::lexer::StringLiteral s) : data(kn::eval::String(s.data)) {}
+    LitExpr(kn::lexer::NumericLiteral n) : data(kn::eval::Number(n.data)) {}
 
-    Value evaluate() const override {
+    kn::eval::Value evaluate() const override {
       return data;
     }
     void dump() const override {
       std::cout << data;
     }
-    Value data;
+    kn::eval::Value data;
   };
 
 }
 
 namespace kn {
 
-  Expression::~Expression() = default;
-
-  ExpressionPtr parse(const std::vector<lex::Token>& tokens) {
+  eval::ExpressionPtr parse(const std::vector<kn::lexer::Token>& tokens) {
     if (tokens.empty())
       return std::make_unique<NullExpr>();
 
@@ -135,7 +130,7 @@ namespace kn {
         }
       }
       else if (auto x = it->as_ident()) {
-        top().add_arg(std::make_unique<IdentExpr>(std::string(x->name)));
+        top().add_arg(std::make_unique<eval::IdentExpr>(std::string(x->name)));
       }
       else {
         throw kn::Error(it->range(), "error: unknown token type");

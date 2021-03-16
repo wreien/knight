@@ -2,10 +2,11 @@
 #define KNIGHT_FUNCS_HPP_INCLUDED
 
 #include "parser.hpp"
+#include "value.hpp"
 
 namespace kn::funcs {
 
-  using lexer::TokenIter;
+  using eval::ExpressionPtr;
 
   // arity 0
 
