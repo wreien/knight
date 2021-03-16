@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
 project(knight_cpp2 VERSION 0.1 LANGUAGES CXX)
+include(CheckIPOSupported)
 
 add_executable(knight)
 set_target_properties(knight PROPERTIES
@@ -8,6 +9,7 @@ set_target_properties(knight PROPERTIES
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
 )
+
 
 target_sources(knight PRIVATE
     src/env.cpp
@@ -29,6 +31,13 @@ if (WIN32)
     target_sources(knight PRIVATE src/shell_win32.cpp)
 else()
     target_sources(knight PRIVATE src/shell_posix.cpp)
+endif()
+
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    check_ipo_supported(RESULT result)
+    if (result)
+        set_target_properties(knight PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
 endif()
 
 if (MSVC)
