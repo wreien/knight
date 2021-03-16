@@ -10,6 +10,8 @@ set_target_properties(knight PROPERTIES
 )
 
 target_sources(knight PRIVATE
+    src/env.cpp
+    src/env.hpp
     src/error.hpp
     src/funcs.cpp
     src/funcs.hpp

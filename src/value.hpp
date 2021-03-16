@@ -9,8 +9,8 @@
 namespace kn::eval {
 
   // basic types
-  struct Null { 
-    friend bool operator==(Null, Null) noexcept { return true; } 
+  struct Null {
+    friend bool operator==(Null, Null) noexcept { return true; }
   };
 
   using Boolean = bool;
@@ -47,9 +47,9 @@ namespace kn::eval {
     }
 
     friend std::ostream& operator<<(std::ostream& os, const Value& value) {
-      if (std::holds_alternative<Null>(value)) 
+      if (std::holds_alternative<Null>(value))
         os << "Null()";
-      else if (auto x = std::get_if<Boolean>(&value)) 
+      else if (auto x = std::get_if<Boolean>(&value))
         os << "Boolean(" << (*x ? "true" : "false") << ")";
       else if (auto x = std::get_if<Number>(&value))
         os << "Number(" << *x << ")";

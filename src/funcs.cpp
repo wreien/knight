@@ -11,6 +11,9 @@
 #include <tuple>
 
 #include "error.hpp"
+#include "env.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
 
 
 namespace {
@@ -92,7 +95,14 @@ namespace kn::funcs {
   // arity 1
 
 
-  ExpressionPtr eval(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr eval(ParseInfo info) {
+    return make_expression<1>(std::move(info), [](auto&& expr) {
+      auto str = expr->evaluate().to_string();
+      auto tokens = kn::lexer::tokenise(str);
+      return kn::parse(tokens)->evaluate();
+    });
+  }
+
   ExpressionPtr block(ParseInfo info) { unimplemented(info); }
   ExpressionPtr call(ParseInfo info) { unimplemented(info); }
   ExpressionPtr shell(ParseInfo info) { unimplemented(info); }
@@ -195,8 +205,6 @@ namespace kn::funcs {
   }
 
   ExpressionPtr conjunct(ParseInfo info) {
-    // the spec is very unclear about this
-    // I'm going by the spirit of the spec, not the letter
     return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
       auto lhs_val = lhs->evaluate();
       if (not lhs_val.to_bool())
@@ -222,7 +230,16 @@ namespace kn::funcs {
     });
   }
 
-  ExpressionPtr assign(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr assign(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& var, auto&& expr) {
+      if (auto id = dynamic_cast<IdentExpr*>(var.get())) {
+        return Environment::get().assign(id->data, expr->evaluate());
+      } else {
+        // TODO: propagate location info and throw
+        assert(false);
+      }
+    });
+  }
 
   ExpressionPtr while_(ParseInfo info) {
     return make_expression<2>(std::move(info), [](auto&& cond, auto&& block) {
@@ -248,7 +265,9 @@ namespace kn::funcs {
 
   ExpressionPtr get(ParseInfo info) { unimplemented(info); }
 
+
   // arity 4
+
 
   ExpressionPtr substitute(ParseInfo info) { unimplemented(info); }
 

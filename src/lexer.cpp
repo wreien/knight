@@ -4,6 +4,7 @@
 #include <cassert>
 #include <charconv>
 #include <iterator>
+#include <iostream>
 
 #include "sourcepos.hpp"
 #include "error.hpp"
@@ -28,11 +29,16 @@ namespace {
     kn::SourceIterator next_iter;
   };
 
+  // Not quite an adjacent find;
+  // we get the last contiguous element such that pred still holds.
+  // We assume pred holds for *first, i.e. that first != last.
   template <typename Pred>
-  iter find_last_contiguous(iter first, iter end, Pred pred) {
-    return std::adjacent_find(first, end, [pred](char lhs, char rhs) {
-      return pred(lhs) != pred(rhs);
-    });
+  iter find_last_contiguous(iter first, iter last, Pred pred) {
+    iter next = std::next(first);
+    for (; next != last; ++next, ++first)
+      if (not pred(*next))
+        return first;
+    return first;
   }
 
   // parse functions
@@ -130,7 +136,6 @@ namespace kn::lexer {
       case '#': {
         // comments
         it = std::find(it, end, '\n');
-        ++it;
       } break;
 
       case '\'': case '"': {

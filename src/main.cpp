@@ -20,10 +20,6 @@ int main(int argc, char** argv) {
 
   try {
     auto tokens = kn::lexer::tokenise(input);
-    std::cout << "[\n";
-    for (auto&& x : tokens) std::cout << "  => " << x << '\n';
-    std::cout << "]\n";
-
     auto expr = kn::parse(tokens);
     auto value = expr->evaluate();
     std::cout << "result: " << value << '\n';

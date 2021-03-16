@@ -19,6 +19,9 @@ namespace kn {
     Error(std::pair<SourcePosition, SourcePosition> range, std::string_view msg)
       : Error(range.first, range.second, msg)
     {}
+    Error(std::string_view msg)
+      : m_msg(msg), m_first{ -1, -1 }, m_last{ -1, -1 }
+    {}
 
     SourcePosition pos() const noexcept {
       return m_first;
@@ -26,6 +29,10 @@ namespace kn {
 
     std::pair<SourcePosition, SourcePosition> range() const noexcept {
       return { m_first, m_last };
+    }
+
+    bool has_position() const noexcept {
+      return pos().line < 0 or pos().column < 0;
     }
 
     const char* what() const noexcept override {

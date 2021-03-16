@@ -1,5 +1,6 @@
 #include "parser.hpp"
 
+#include "env.hpp"
 #include "error.hpp"
 #include "funcs.hpp"
 #include "lexer.hpp"
@@ -93,10 +94,6 @@ namespace {
     Value data;
   };
 
-  struct IdentifierExpr : kn::Expression {
-    // TODO
-  };
-
 }
 
 namespace kn {
@@ -137,8 +134,8 @@ namespace kn {
           throw kn::Error(it->range(), "error: unknown function");
         }
       }
-      else if ([[maybe_unused]] auto x = it->as_ident()) {
-        throw kn::Error(it->range(), "error: unimplemented");
+      else if (auto x = it->as_ident()) {
+        top().add_arg(std::make_unique<IdentExpr>(std::string(x->name)));
       }
       else {
         throw kn::Error(it->range(), "error: unknown token type");
