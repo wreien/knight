@@ -39,10 +39,18 @@ namespace kn::eval {
       return 0;  // null
     }
 
-    String to_string() const {
+    String to_string() const& {
       if (auto x = std::get_if<Boolean>(this)) return *x ? "true" : "false";
       if (auto x = std::get_if<Number>(this)) return std::to_string(*x);
       if (auto x = std::get_if<String>(this)) return *x;
+      return "null";  // null
+    }
+
+    // optimise common case of copying from expiring value
+    String to_string() && {
+      if (auto x = std::get_if<Boolean>(this)) return *x ? "true" : "false";
+      if (auto x = std::get_if<Number>(this)) return std::to_string(*x);
+      if (auto x = std::get_if<String>(this)) return std::move(*x);
       return "null";  // null
     }
 
@@ -62,9 +70,7 @@ namespace kn::eval {
 
   private:
     static Number string_to_number(const std::string& s) {
-      // according to a strict reading of the spec,
-      // parentheses count as whitespace :)
-      auto i = s.find_first_not_of("\t\n\r ()[]{}");
+      auto i = s.find_first_not_of("\t\n\r ");
 
       // explicitly do no error checking
       Number result = 0;

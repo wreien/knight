@@ -4,6 +4,8 @@
 #include <array>
 #include <cassert>
 #include <cstdlib>
+#include <cmath>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <random>
@@ -55,6 +57,45 @@ namespace {
     assert(info.arity == A);
     return std::make_unique<FunctionExpr>(std::move(f), info.args);
   }
+
+  template <typename F>
+  auto make_binary_math_op(kn::ParseInfo&& info, F f) {
+    return make_expression<2>(std::move(info), [f](auto&& lhs, auto&& rhs) {
+      auto lhs_val = lhs->evaluate();
+      if (lhs_val.is_number()) {
+        auto x = lhs_val.to_number();
+        auto y = rhs->evaluate().to_number();
+        return f(x, y);
+      } else {
+        // TODO: propagate location info and throw error
+        assert(false);
+      }
+    });
+  }
+
+  template <typename F>
+  auto make_comparison_op(kn::ParseInfo&& info, F f) {
+    return make_expression<2>(std::move(info), [f](auto&& lhs, auto&& rhs) {
+      auto lhs_val = lhs->evaluate();
+      if (lhs_val.is_number()) {
+        auto x = lhs_val.to_number();
+        auto y = rhs->evaluate().to_number();
+        return f(x, y);
+      } else if (lhs_val.is_string()) {
+        auto x = lhs_val.to_string();
+        auto y = rhs->evaluate().to_string();
+        return f(x, y);
+      } else if (lhs_val.is_bool()) {
+        auto x = lhs_val.to_bool();
+        auto y = rhs->evaluate().to_bool();
+        return f(x, y);
+      } else {
+        // TODO: propagate location info and throw error
+        assert(false);
+      }
+    });
+  }
+
 }
 
 namespace kn::funcs {
@@ -105,6 +146,7 @@ namespace kn::funcs {
 
   ExpressionPtr block(ParseInfo info) { unimplemented(info); }
   ExpressionPtr call(ParseInfo info) { unimplemented(info); }
+
   ExpressionPtr shell(ParseInfo info) { unimplemented(info); }
 
   ExpressionPtr quit(ParseInfo info) {
@@ -150,15 +192,15 @@ namespace kn::funcs {
 
   ExpressionPtr plus(ParseInfo info) {
     return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      auto lhs_eval = lhs->evaluate();
-      if (lhs_eval.is_number()) {
-        auto lhs_val = lhs_eval.to_number();
-        auto rhs_val = rhs->evaluate().to_number();
-        return Value(lhs_val + rhs_val);
-      } else if (lhs_eval.is_string()) {
-        auto lhs_val = lhs_eval.to_string();
-        auto rhs_val = rhs->evaluate().to_string();
-        return Value(lhs_val + rhs_val);
+      auto lhs_val = lhs->evaluate();
+      if (lhs_val.is_number()) {
+        auto x = lhs_val.to_number();
+        auto y = rhs->evaluate().to_number();
+        return Value(x + y);
+      } else if (lhs_val.is_string()) {
+        auto x = lhs_val.to_string();
+        auto y = rhs->evaluate().to_string();
+        return Value(x + y);
       } else {
         // TODO: propagate location info and throw error
         assert(false);
@@ -166,35 +208,52 @@ namespace kn::funcs {
     });
   }
 
-  ExpressionPtr minus(ParseInfo info) { unimplemented(info); }
-  ExpressionPtr multiplies(ParseInfo info) { unimplemented(info); }
-  ExpressionPtr divides(ParseInfo info) { unimplemented(info); }
-  ExpressionPtr modulus(ParseInfo info) { unimplemented(info); }
-  ExpressionPtr exponent(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr multiplies(ParseInfo info) {
+    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
+      auto lhs_val = lhs->evaluate();
+      if (lhs_val.is_number()) {
+        auto x = lhs_val.to_number();
+        auto y = rhs->evaluate().to_number();
+        return Value(x * y);
+      } else if (lhs_val.is_string()) {
+        auto x = lhs_val.to_string();
+        auto y = static_cast<std::size_t>(rhs->evaluate().to_number());
+        std::string s;
+        s.reserve(x.size() * y);
+        while (y--) s += x;
+        return Value(std::move(s));
+      } else {
+        // TODO: propagate location info and throw error
+        assert(false);
+      }
+    });
+  }
+
+  ExpressionPtr minus(ParseInfo info) {
+    return make_binary_math_op(std::move(info), std::minus{});
+  }
+
+  ExpressionPtr divides(ParseInfo info) {
+    return make_binary_math_op(std::move(info), std::divides{});
+  }
+
+  ExpressionPtr modulus(ParseInfo info) {
+    // TODO: doesn't line up with spec; also spec is self-contradictory
+    return make_binary_math_op(std::move(info), std::modulus{});
+  }
+
+  ExpressionPtr exponent(ParseInfo info) {
+    return make_binary_math_op(std::move(info), [](Number lhs, Number rhs) {
+      return static_cast<Number>(std::pow(lhs, rhs)); });
+  }
 
   ExpressionPtr less(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      auto lhs_eval = lhs->evaluate();
-      if (lhs_eval.is_number()) {
-        auto lhs_val = lhs_eval.to_number();
-        auto rhs_val = rhs->evaluate().to_number();
-        return lhs_val < rhs_val;
-      } else if (lhs_eval.is_string()) {
-        auto lhs_val = lhs_eval.to_string();
-        auto rhs_val = rhs->evaluate().to_string();
-        return lhs_val < rhs_val;
-      } else if (lhs_eval.is_bool()) {
-        auto lhs_val = lhs_eval.to_bool();
-        auto rhs_val = rhs->evaluate().to_bool();
-        return not lhs_val and rhs_val;
-      } else {
-        // TODO: propagate location info and throw error
-        assert(false);
-      }
-    });
+    return make_comparison_op(std::move(info), std::less{});
   }
 
-  ExpressionPtr greater(ParseInfo info) { unimplemented(info); }
+  ExpressionPtr greater(ParseInfo info) {
+    return make_comparison_op(std::move(info), std::greater{});
+  }
 
   ExpressionPtr equals(ParseInfo info) {
     return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
