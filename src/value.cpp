@@ -17,8 +17,6 @@ namespace {
 
 namespace kn::eval {
 
-  Expression::~Expression() = default;
-
   Boolean Value::to_bool() const {
     if (auto x = std::get_if<Boolean>(this)) return *x;
     if (auto x = std::get_if<Number>(this)) return *x != 0;

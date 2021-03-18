@@ -1,42 +1,78 @@
 #include "env.hpp"
-#include "error.hpp"
+
+#include <cassert>
 #include <iostream>
+
+#include "error.hpp"
 
 namespace kn::eval {
 
-  Environment::Environment() = default;
+  Environment::Environment()
+    : id_map()
+    , stringlit_map()
+    , values{ { Null{} }, { true }, { false } }
+    , names{ "NULL", "TRUE", "FALSE" }
+    , jumptarget_id{ 0 }
+  {}
 
   Environment& Environment::get() {
     static Environment env;
     return env;
   }
 
-  Variable Environment::get_variable(const std::string& name) {
+  Label Environment::get_variable(const std::string& name) {
     auto [it, inserted] = id_map.try_emplace(name, values.size());
     if (inserted) {
       names.push_back(name);
       values.emplace_back();
     }
-    return { it->second };
+    return { LabelCat::Variable, it->second };
   }
 
-  const Value& Environment::value(const Variable& v) const {
-    if (not values[v.id]) {
-      throw kn::Error("error: evaluating undefined variable " + names[v.id]);
+  Label Environment::get_temp() {
+    names.push_back("v:" + std::to_string(names.size()));
+    values.emplace_back();
+    return { LabelCat::Variable, values.size() - 1 };
+  }
+
+  Label Environment::get_literal(String s) {
+    auto [it, inserted] = stringlit_map.try_emplace(s, values.size());
+    if (inserted) {
+      names.emplace_back("s:" + std::to_string(names.size()));
+      values.emplace_back(std::move(s));
     }
-    return *values[v.id];
+    return { LabelCat::Variable, it->second };
   }
 
-  const Value& Environment::assign(const Variable& v, Value x) {
-    return values[v.id].emplace(std::move(x));
+  Label Environment::get_literal(Boolean b) const noexcept {
+    return { LabelCat::Variable, b ? 1u : 2u };
   }
 
-  IdentExpr::IdentExpr(const std::string& name)
-    : data(Environment::get().get_variable(name))
-  {}
+  Label Environment::get_literal(Null) const noexcept {
+    return { LabelCat::Variable, 0 };
+  }
 
-  void IdentExpr::dump(std::ostream& os) const {
-    os << "Identifier(" << Environment::get().nameof(data) << ")";
+  Label Environment::get_jump() {
+    return { LabelCat::JumpTarget, jumptarget_id++ };
+  }
+
+  const std::string& Environment::nameof(const Label& v) const {
+    assert(v.cat() == LabelCat::Variable);
+    return names[v.id()];
+  }
+
+  const Value& Environment::value(const Label& v) const {
+    assert(v.cat() == LabelCat::Variable);
+    if (not values[v.id()]) {
+      throw kn::Error("error: evaluating undefined variable " + names[v.id()]);
+    }
+    return *values[v.id()];
+  }
+
+  const Value& Environment::assign(const Label& v, Value x) {
+    assert(v.cat() == LabelCat::Variable);
+    assert(v.id() >= 3);
+    return values[v.id()].emplace(std::move(x));
   }
 
 }

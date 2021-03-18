@@ -1,377 +1,312 @@
 #include "funcs.hpp"
 
-#include <algorithm>
-#include <array>
 #include <cassert>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
-#include <iterator>
 #include <random>
-#include <string>
-#include <tuple>
+#include <vector>
 
-#include "error.hpp"
 #include "env.hpp"
-#include "lexer.hpp"
-#include "parser.hpp"
+#include "error.hpp"
+#include "value.hpp"
 
+using namespace kn::eval;
 
 namespace {
 
-  template <std::size_t A, typename F>
-  auto make_expression(kn::ParseInfo&& info, F f) {
-    using namespace kn::eval;
-
-    struct FunctionExpr : Expression {
-      FunctionExpr(F&& func, ExpressionPtr* args) : func(std::move(func)) {
-        std::copy(std::move_iterator(args), std::move_iterator(args + A),
-                  children.begin());
-      }
-
-      Value evaluate() const override {
-        if constexpr (std::is_void_v<decltype(std::apply(func, children))>) {
-          std::apply(func, children);
-          return kn::eval::Null{};
-        } else {
-          return std::apply(func, children);
-        }
-      }
-
-      void dump(std::ostream& os) const override {
-        os << "Function(" << A;
-        for (auto&& c : children) {
-          os << " ";
-          c->dump(os);
-        }
-        os << ")";
-      }
-
-      F func;
-      std::array<ExpressionPtr, A> children;
-    };
-
-    assert(info.arity == A);
-    return std::make_unique<FunctionExpr>(std::move(f), info.args);
+  Value get_value(CodePoint cp) {
+    switch (cp.label.cat()) {
+    case LabelCat::Constant:
+      return Number(cp.label.id());
+    case LabelCat::JumpTarget:
+      return Block{ cp.label.id() };
+    case LabelCat::Variable:
+      return Environment::get().value(cp.label);
+    case LabelCat::Unused:
+      throw kn::Error("error: read placeholder value while parsing");
+    }
+#ifdef __GNUC__
+    __builtin_unreachable();
+#endif
   }
 
-  struct BlockExpr : kn::eval::Expression {
-    BlockExpr(kn::eval::ExpressionPtr expr) : data(std::move(expr)) {}
+  void set_result(const CodePoint* bytecode, std::size_t offset, Value v) {
+    Environment::get().assign(bytecode[offset + 1].label, std::move(v));
+  }
 
-    kn::eval::Value evaluate() const override {
-      return data;
+  template <typename F>
+  std::size_t binary_math_op(const CodePoint* bytecode, std::size_t offset, F f) {
+    auto lhs = get_value(bytecode[offset + 2]);
+    if (lhs.is_number()) {
+      auto x = lhs.to_number();
+      auto y = get_value(bytecode[offset + 3]).to_number();
+      set_result(bytecode, offset, f(x, y));
     }
 
-    void dump(std::ostream& os) const override {
-      // why not block? if you insist...
-      os << "Function(";
-      data.expr->dump(os);
-      os << ")";
-    }
+    return offset + 4;
+  }
 
-    kn::eval::Block data;
+  template <typename F>
+  std::size_t binary_compare_op(const CodePoint* bytecode, std::size_t offset, F f) {
+    auto lhs = get_value(bytecode[offset + 2]);
+    if (lhs.is_number()) {
+      auto x = lhs.to_number();
+      auto y = get_value(bytecode[offset + 3]).to_number();
+      set_result(bytecode, offset, f(x, y));
+    } else if (lhs.is_number()) {
+      auto x = lhs.to_string();
+      auto y = get_value(bytecode[offset + 3]).to_string();
+      set_result(bytecode, offset, f(x, y));
+    } else if (lhs.is_bool()) {
+      auto x = lhs.to_bool();
+      auto y = get_value(bytecode[offset + 3]).to_bool();
+      set_result(bytecode, offset, f(x, y));
+    } else {
+      assert(false);
+    }
+    return offset + 4;
+  }
+
+  struct CallStack {
+    std::size_t caller;
+    Label result;
   };
-
-  template <typename F>
-  auto make_binary_math_op(kn::ParseInfo&& info, F f) {
-    return make_expression<2>(std::move(info), [f](auto&& lhs, auto&& rhs) {
-      auto lhs_val = lhs->evaluate();
-      if (lhs_val.is_number()) {
-        auto x = lhs_val.to_number();
-        auto y = rhs->evaluate().to_number();
-        return f(x, y);
-      } else {
-        // TODO: propagate location info and throw error
-        assert(false);
-      }
-    });
-  }
-
-  template <typename F>
-  auto make_comparison_op(kn::ParseInfo&& info, F f) {
-    return make_expression<2>(std::move(info), [f](auto&& lhs, auto&& rhs) {
-      auto lhs_val = lhs->evaluate();
-      if (lhs_val.is_number()) {
-        auto x = lhs_val.to_number();
-        auto y = rhs->evaluate().to_number();
-        return f(x, y);
-      } else if (lhs_val.is_string()) {
-        auto x = lhs_val.to_string();
-        auto y = rhs->evaluate().to_string();
-        return f(x, y);
-      } else if (lhs_val.is_bool()) {
-        auto x = lhs_val.to_bool();
-        auto y = rhs->evaluate().to_bool();
-        return f(x, y);
-      } else {
-        // TODO: propagate location info and throw error
-        assert(false);
-      }
-    });
-  }
+  std::vector<CallStack> call_stack;
 
 }
 
 namespace kn::funcs {
 
-  using namespace kn::eval;
+  // control flow
 
-  // arity 0
-
-  ExpressionPtr true_(ParseInfo info) {
-    return make_expression<0>(std::move(info), []{ return true; });
+  std::size_t no_op(const CodePoint*, std::size_t offset) {
+    return offset + 1;
   }
 
-  ExpressionPtr false_(ParseInfo info) {
-    return make_expression<0>(std::move(info), []{ return false; });
+  std::size_t error(const CodePoint* bytecode, std::size_t offset) {
+    using namespace std::literals;
+    throw kn::Error("error executing OpCode="s +
+                    std::to_string(static_cast<std::size_t>(bytecode[offset].op)) +
+                    " at offset="s +
+                    std::to_string(offset));
   }
 
-  ExpressionPtr null(ParseInfo info) {
-    return make_expression<0>(std::move(info), []{ return Null{}; });
+  std::size_t call(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Call);
+    call_stack.push_back({ offset, bytecode[offset + 1].label });
+    return get_value(bytecode[offset + 2]).to_block().address;
   }
 
-  ExpressionPtr prompt(ParseInfo info) {
-    return make_expression<0>(std::move(info), []{
-      std::string line; std::getline(std::cin, line); return line; });
+  std::size_t return_(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Return);
+    auto frame = call_stack.back();
+    call_stack.pop_back();
+    Environment::get().assign(frame.result, get_value(bytecode[offset + 1]));
+    return frame.caller + 3;
   }
 
-  ExpressionPtr random(ParseInfo info) {
-    thread_local auto generator = []{
-      std::random_device rd;
-      std::mt19937 gen(rd());
-      return gen;
-    }();
-    thread_local auto dist = std::uniform_int_distribution(
-      eval::Number{}, std::numeric_limits<eval::Number>::max());
-    return make_expression<0>(std::move(info), []{ return dist(generator); });
+  std::size_t jump(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Jump);
+    assert(bytecode[offset + 1].label.cat() == LabelCat::JumpTarget);
+    return bytecode[offset + 1].label.id();
   }
 
+  std::size_t jump_if(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::JumpIf);
+    assert(bytecode[offset + 1].label.cat() == LabelCat::JumpTarget);
 
-  // arity 1
-
-
-  ExpressionPtr eval(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      auto str = expr->evaluate().to_string();
-      auto tokens = kn::lexer::tokenise(str);
-      return kn::parse(tokens)->evaluate();
-    });
+    if (get_value(bytecode[offset + 2]).to_bool())
+      return bytecode[offset + 1].label.id();
+    return offset + 3;
   }
 
-  ExpressionPtr block(ParseInfo info) {
-    assert(info.arity == 1);
-    return std::make_unique<BlockExpr>(std::move(info.args[0]));
+  std::size_t jump_if_not(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::JumpIfNot);
+    assert(bytecode[offset + 1].label.cat() == LabelCat::JumpTarget);
+
+    if (not get_value(bytecode[offset + 2]).to_bool())
+      return bytecode[offset + 1].label.id();
+    return offset + 3;
   }
 
-  ExpressionPtr call(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      auto block = expr->evaluate().to_block();
-      return block.expr->evaluate();
-    });
+  // arithmetic
+  std::size_t plus(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Plus);
+
+    auto lhs = get_value(bytecode[offset + 2]);
+    if (lhs.is_number()) {
+      auto x = lhs.to_number();
+      auto y = get_value(bytecode[offset + 3]).to_number();
+      set_result(bytecode, offset, x + y);
+    } else if (lhs.is_string()) {
+      auto x = lhs.to_string();
+      auto y = get_value(bytecode[offset + 3]).to_string();
+      set_result(bytecode, offset, x + y);
+    } else {
+      assert(false);
+    }
+
+    return offset + 4;
   }
 
-  ExpressionPtr shell(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      return open_shell(expr->evaluate().to_string());
-    });
+  std::size_t multiplies(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Plus);
+
+    auto lhs = get_value(bytecode[offset + 2]);
+    if (lhs.is_number()) {
+      auto x = lhs.to_number();
+      auto y = get_value(bytecode[offset + 3]).to_number();
+      set_result(bytecode, offset, x * y);
+    } else if (lhs.is_string()) {
+      auto x = lhs.to_string();
+      auto y = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
+      auto s = std::string{};
+      s.reserve(x.size() * y);
+      while (y--) s += x;
+      set_result(bytecode, offset, std::move(s));
+    } else {
+      assert(false);
+    }
+
+    return offset + 4;
   }
 
-  ExpressionPtr quit(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      std::exit(expr->evaluate().to_number());
-    });
+  std::size_t minus(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Minus);
+    return binary_math_op(bytecode, offset, std::minus{});
   }
 
-  ExpressionPtr negate(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      return not expr->evaluate().to_bool();
-    });
+  std::size_t divides(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Divides);
+    return binary_math_op(bytecode, offset, std::divides{});
   }
 
-  ExpressionPtr length(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      return static_cast<Number>(expr->evaluate().to_string().length());
-    });
+  std::size_t modulus(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Modulus);
+    return binary_math_op(bytecode, offset, std::modulus{});
   }
 
-  ExpressionPtr dump(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      std::cout << expr->evaluate(); return Null{};
-    });
-  }
-
-  ExpressionPtr output(ParseInfo info) {
-    return make_expression<1>(std::move(info), [](auto&& expr) {
-      // by spec always flush output
-      auto str = expr->evaluate().to_string();
-      if (not str.empty() and str.back() == '\\') {
-        str.pop_back();
-        std::cout << str << std::flush;
-      } else {
-        std::cout << str << '\n' << std::flush;
-      }
-    });
-  }
-
-
-  // arity 2
-
-
-  ExpressionPtr plus(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      auto lhs_val = lhs->evaluate();
-      if (lhs_val.is_number()) {
-        auto x = lhs_val.to_number();
-        auto y = rhs->evaluate().to_number();
-        return Value(x + y);
-      } else if (lhs_val.is_string()) {
-        auto x = lhs_val.to_string();
-        auto y = rhs->evaluate().to_string();
-        return Value(x + y);
-      } else {
-        // TODO: propagate location info and throw error
-        assert(false);
-      }
-    });
-  }
-
-  ExpressionPtr multiplies(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      auto lhs_val = lhs->evaluate();
-      if (lhs_val.is_number()) {
-        auto x = lhs_val.to_number();
-        auto y = rhs->evaluate().to_number();
-        return Value(x * y);
-      } else if (lhs_val.is_string()) {
-        auto x = lhs_val.to_string();
-        auto y = static_cast<std::size_t>(rhs->evaluate().to_number());
-        std::string s;
-        s.reserve(x.size() * y);
-        while (y--) s += x;
-        return Value(std::move(s));
-      } else {
-        // TODO: propagate location info and throw error
-        assert(false);
-      }
-    });
-  }
-
-  ExpressionPtr minus(ParseInfo info) {
-    return make_binary_math_op(std::move(info), std::minus{});
-  }
-
-  ExpressionPtr divides(ParseInfo info) {
-    return make_binary_math_op(std::move(info), std::divides{});
-  }
-
-  ExpressionPtr modulus(ParseInfo info) {
-    // TODO: doesn't line up with spec; also spec is self-contradictory
-    return make_binary_math_op(std::move(info), std::modulus{});
-  }
-
-  ExpressionPtr exponent(ParseInfo info) {
-    return make_binary_math_op(std::move(info), [](Number lhs, Number rhs) {
+  std::size_t exponent(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Exponent);
+    return binary_math_op(bytecode, offset, [](Number lhs, Number rhs) {
       return static_cast<Number>(std::pow(lhs, rhs)); });
   }
 
-  ExpressionPtr less(ParseInfo info) {
-    return make_comparison_op(std::move(info), std::less{});
+  // logical
+
+  std::size_t negate(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Negate);
+    auto val = not get_value(bytecode[offset + 2]).to_bool();
+    set_result(bytecode, offset, val);
+    return offset + 3;
   }
 
-  ExpressionPtr greater(ParseInfo info) {
-    return make_comparison_op(std::move(info), std::greater{});
+  std::size_t less(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Less);
+    return binary_compare_op(bytecode, offset, std::less{});
   }
 
-  ExpressionPtr equals(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      auto lhs_val = lhs->evaluate();
-      auto rhs_val = rhs->evaluate();
-      return lhs_val == rhs_val;
-    });
+  std::size_t greater(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Greater);
+    return binary_compare_op(bytecode, offset, std::greater{});
   }
 
-  ExpressionPtr conjunct(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      auto lhs_val = lhs->evaluate();
-      if (not lhs_val.to_bool())
-        return lhs_val;
-      return rhs->evaluate();
-    });
+  std::size_t equals(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Equals);
+    auto lhs = get_value(bytecode[offset + 2]);
+    auto rhs = get_value(bytecode[offset + 3]);
+    set_result(bytecode, offset, lhs == rhs);
+    return offset + 4;
   }
 
-  ExpressionPtr disjunct(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      auto lhs_val = lhs->evaluate();
-      if (lhs_val.to_bool())
-        return lhs_val;
-      return rhs->evaluate();
-    });
+  // string
+  std::size_t length(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Length);
+    auto str = get_value(bytecode[offset + 2]).to_string();
+    set_result(bytecode, offset, static_cast<Number>(str.length()));
+    return offset + 3;
   }
 
-  ExpressionPtr sequence(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& lhs, auto&& rhs) {
-      // ignore return value
-      lhs->evaluate();
-      return rhs->evaluate();
-    });
+  std::size_t get(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Get);
+    auto str = get_value(bytecode[offset + 2]).to_string();
+    auto pos = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
+    auto len = static_cast<std::size_t>(get_value(bytecode[offset + 4]).to_number());
+    set_result(bytecode, offset, str.substr(pos, len));
+    return offset + 5;
   }
 
-  ExpressionPtr assign(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& var, auto&& expr) {
-      if (auto id = dynamic_cast<const IdentExpr*>(var.get())) {
-        return Environment::get().assign(id->data, expr->evaluate());
-      } else {
-        // TODO: propagate location info and throw
-        assert(false);
-      }
-    });
+  std::size_t substitute(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Substitute);
+    auto str = get_value(bytecode[offset + 2]).to_string();
+    auto pos = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
+    auto len = static_cast<std::size_t>(get_value(bytecode[offset + 4]).to_number());
+    auto replace = get_value(bytecode[offset + 5]).to_string();
+    set_result(bytecode, offset, str.replace(pos, len, replace));
+    return offset + 6;
   }
 
-  ExpressionPtr while_(ParseInfo info) {
-    return make_expression<2>(std::move(info), [](auto&& cond, auto&& block) {
-      while (cond->evaluate().to_bool())
-        block->evaluate();
-      return Null{};
-    });
+  // environment
+
+  std::size_t assign(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Assign);
+    set_result(bytecode, offset, get_value(bytecode[offset + 2]));
+    return offset + 3;
   }
 
-
-  // arity 3
-
-
-  ExpressionPtr ifelse(ParseInfo info) {
-    return make_expression<3>(std::move(info), [](auto&& cond, auto&& t, auto&& f) {
-      if (cond->evaluate().to_bool()) {
-        return t->evaluate();
-      } else {
-        return f->evaluate();
-      }
-    });
+  std::size_t prompt(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Prompt);
+    auto line = std::string{};
+    std::getline(std::cin, line);
+    set_result(bytecode, offset, std::move(line));
+    return offset + 2;
   }
 
-  ExpressionPtr get(ParseInfo info) {
-    return make_expression<3>(std::move(info), [](auto&& s, auto&& i, auto&& c) {
-      auto str = s->evaluate().to_string();
-      auto idx = static_cast<std::size_t>(i->evaluate().to_number());
-      auto cnt = static_cast<std::size_t>(c->evaluate().to_number());
-      return str.substr(idx, cnt);
-    });
+  std::size_t output(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Output);
+    auto str = get_value(bytecode[offset + 1]).to_string();
+    if (not str.empty() and str.back() == '\\') {
+      str.pop_back();
+      std::cout << str << std::flush;
+    } else {
+      std::cout << str << '\n' << std::flush;
+    }
+    return offset + 2;
   }
 
+  std::size_t random(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Random);
+    thread_local auto generator = std::mt19937(std::random_device{}());
+    thread_local auto dist = std::uniform_int_distribution(
+      Number{}, std::numeric_limits<Number>::max());
+    set_result(bytecode, offset, dist(generator));
+    return offset + 2;
+  }
 
-  // arity 4
+  std::size_t shell(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Shell);
+    set_result(bytecode, offset,
+               open_shell(get_value(bytecode[offset + 2]).to_string()));
+    return offset + 3;
+  }
 
+  std::size_t quit(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Quit);
+    std::exit(get_value(bytecode[offset + 1]).to_number());
+  }
 
-  ExpressionPtr substitute(ParseInfo info) {
-    return make_expression<4>(std::move(info),
-      [](auto&& s, auto&& i, auto&& c, auto&& r) {
-        auto str = s->evaluate().to_string();
-        auto idx = static_cast<std::size_t>(i->evaluate().to_number());
-        auto cnt = static_cast<std::size_t>(c->evaluate().to_number());
-        auto replace = r->evaluate().to_string();
-        return str.replace(idx, cnt, replace);
-      });
+  std::size_t eval(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Eval);
+    // TODO
+  }
+
+  std::size_t dump(const CodePoint* bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Dump);
+    std::cout << get_value(bytecode[offset + 1]);
+    return offset + 2;
   }
 
 }
+

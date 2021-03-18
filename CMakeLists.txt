@@ -10,11 +10,14 @@ set_target_properties(knight PROPERTIES
     CXX_EXTENSIONS NO
 )
 
-
 target_sources(knight PRIVATE
+    src/emit.cpp
+    src/emit.hpp
     src/env.cpp
     src/env.hpp
     src/error.hpp
+    src/eval.cpp
+    src/eval.hpp
     src/funcs.cpp
     src/funcs.hpp
     src/lexer.cpp
@@ -33,23 +36,14 @@ else()
     target_sources(knight PRIVATE src/shell_posix.cpp)
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    check_ipo_supported(RESULT result)
-    if (result)
-        set_target_properties(knight PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
-    endif()
-endif()
+check_ipo_supported(RESULT IS_IPO_SUPPORTED)
+set_target_properties(knight PROPERTIES
+    INTERPROCEDURAL_OPTIMIZATION $<AND:$<CONFIG:Release>,${IS_IPO_SUPPORTED}>)
 
-if (MSVC)
-    target_compile_options(knight PRIVATE 
-        /W4 /permissive-)
-else()
-    target_compile_options(knight PRIVATE 
-        -Wall -Wextra -pedantic -Wsign-conversion)
-    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-        target_compile_options(knight PRIVATE
-            -fsanitize=undefined,address)
-        target_link_libraries(knight PRIVATE
-            -fsanitize=undefined,address)
-    endif()
-endif()
+set(SANITISERS "$<$<CONFIG:Debug>:-fsanitize=undefined,address;-fno-omit-frame-pointer>")
+
+target_compile_options(knight PRIVATE
+    "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-pedantic;-Wsign-conversion;${SANITISERS}>"
+    "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
+target_link_libraries(knight PRIVATE
+    "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:${SANITISERS}>")

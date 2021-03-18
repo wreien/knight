@@ -10,14 +10,6 @@ namespace kn::eval {
 
   struct Value;
 
-  // expressions
-  struct Expression {
-    virtual ~Expression();
-    virtual Value evaluate() const = 0;
-    virtual void dump(std::ostream& os) const = 0;
-  };
-  using ExpressionPtr = std::unique_ptr<const Expression>;
-
   // basic types
   using Boolean = bool;
   using Number = int;
@@ -27,8 +19,7 @@ namespace kn::eval {
   };
   struct Block {
     friend bool operator==(Block, Block) noexcept { return false; }
-    Block(ExpressionPtr expr) : expr(expr.release()) {}
-    std::shared_ptr<const Expression> expr;
+    std::size_t address;
   };
 
   struct Value : std::variant<Null, Boolean, Number, String, Block> {
@@ -55,7 +46,7 @@ namespace kn::eval {
       else if (auto x = std::get_if<String>(&value))
         os << "String(" << *x << ")";
       else if (auto x = std::get_if<Block>(&value))
-        x->expr->dump(os);
+        os << "Function(" << x->address << ")";
       else
         os << "???";
       return os;

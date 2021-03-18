@@ -6,45 +6,38 @@
 #include <unordered_map>
 #include <vector>
 
-#include "parser.hpp"
+#include "eval.hpp"
+#include "value.hpp"
 
 namespace kn::eval {
-
-  struct Variable {
-    friend bool operator==(Variable a, Variable b) noexcept { return a.id == b.id; }
-    std::size_t id;
-  };
 
   class Environment {
   public:
     static Environment& get();
 
-    Variable get_variable(const std::string& name);
+    Label get_variable(const std::string& name);
+    Label get_temp();
 
-    std::string nameof(const Variable& v) const {
-      return names[v.id];
-    }
+    Label get_literal(String s);
+    Label get_literal(Boolean b) const noexcept;
+    Label get_literal(Null) const noexcept;
 
-    const Value& value(const Variable& v) const;
-    const Value& assign(const Variable& v, Value x);
+    Label get_jump();
+
+    const std::string& nameof(const Label& v) const;
+
+    const Value& value(const Label& v) const;
+    const Value& assign(const Label& v, Value x);
 
   private:
     Environment();
 
     std::unordered_map<std::string, std::size_t> id_map;
+    std::unordered_map<String, std::size_t> stringlit_map;
     std::vector<std::optional<Value>> values;
     std::vector<std::string> names;
-  };
 
-  struct IdentExpr : Expression {
-    IdentExpr(const std::string& name);
-
-    Value evaluate() const override {
-      return Environment::get().value(data);
-    }
-    void dump(std::ostream& os) const override;
-
-    Variable data;
+    std::size_t jumptarget_id;
   };
 
 }

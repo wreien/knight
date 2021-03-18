@@ -5,39 +5,49 @@
 #include <cstddef>
 #include <memory>
 #include <vector>
+#include <deque>
 
 #include "value.hpp"
 #include "lexer.hpp"
+#include "eval.hpp"
 
-namespace kn {
+namespace kn::parser {
 
   inline constexpr std::size_t max_arity = 4;
 
+  struct Emitted {
+    Emitted() = default;
+    Emitted(eval::Label result) : result(result) {}
+    Emitted(eval::Label result, std::deque<eval::Operation> instructions)
+      : result(result), instructions(std::move(instructions))
+    {}
+
+    eval::Label result = {};
+    std::deque<eval::Operation> instructions = {};
+  };
+
   // information about the current stage of parsing
-  struct ParseInfo {
-    // place in the token stream
-    lexer::TokenIter token;
+  struct ASTFrame {
+    // the operation this will perform
+    std::size_t func;
 
-    // the id of the function to call on completion
-    std::size_t func_id;
-
-    // args to be used to construct the given expression
-    eval::ExpressionPtr args[max_arity];
+    // children of this AST
+    Emitted children[max_arity];
 
     // number of args expected vs. filled in
     int arity;
     int num_args;
 
-    void add_arg(eval::ExpressionPtr expr) noexcept {
+    void add_child(Emitted child) noexcept {
       assert(num_args < arity);
-      args[num_args++] = std::move(expr);
+      children[num_args++] = std::move(child);
     }
     bool is_completed() const noexcept {
       return num_args == arity;
     }
   };
 
-  eval::ExpressionPtr parse(const std::vector<lexer::Token>& tokens);
+  Emitted parse(const std::vector<lexer::Token>& tokens);
 
 }
 

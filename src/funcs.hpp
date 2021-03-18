@@ -1,60 +1,52 @@
 #ifndef KNIGHT_FUNCS_HPP_INCLUDED
 #define KNIGHT_FUNCS_HPP_INCLUDED
 
-#include "parser.hpp"
-#include "value.hpp"
+#include <cstddef>
+#include <string>
+#include "eval.hpp"
 
 namespace kn::funcs {
 
-  using eval::ExpressionPtr;
-
   std::string open_shell(std::string command);
 
-  // arity 0
+  // control flow
+  std::size_t no_op(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t error(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t call(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t return_(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t jump(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t jump_if(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t jump_if_not(const kn::eval::CodePoint* bytecode, std::size_t offset);
 
-  ExpressionPtr true_(ParseInfo info);
-  ExpressionPtr false_(ParseInfo info);
-  ExpressionPtr null(ParseInfo info);
-  ExpressionPtr prompt(ParseInfo info);
-  ExpressionPtr random(ParseInfo info);
+  // arithmetic
+  std::size_t plus(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t minus(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t multiplies(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t divides(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t modulus(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t exponent(const kn::eval::CodePoint* bytecode, std::size_t offset);
 
-  // arity 1
+  // logical
+  std::size_t negate(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t less(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t greater(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t equals(const kn::eval::CodePoint* bytecode, std::size_t offset);
 
-  ExpressionPtr eval(ParseInfo info);
-  ExpressionPtr block(ParseInfo info);
-  ExpressionPtr call(ParseInfo info);
-  ExpressionPtr shell(ParseInfo info);
-  ExpressionPtr quit(ParseInfo info);
-  ExpressionPtr negate(ParseInfo info);
-  ExpressionPtr length(ParseInfo info);
-  ExpressionPtr dump(ParseInfo info);
-  ExpressionPtr output(ParseInfo info);
+  // string
+  std::size_t length(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t get(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t substitute(const kn::eval::CodePoint* bytecode, std::size_t offset);
 
-  // arity 2
+  // environment
+  std::size_t assign(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t prompt(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t output(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t random(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t shell(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t quit(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t eval(const kn::eval::CodePoint* bytecode, std::size_t offset);
+  std::size_t dump(const kn::eval::CodePoint* bytecode, std::size_t offset);
 
-  ExpressionPtr plus(ParseInfo info);
-  ExpressionPtr minus(ParseInfo info);
-  ExpressionPtr multiplies(ParseInfo info);
-  ExpressionPtr divides(ParseInfo info);
-  ExpressionPtr modulus(ParseInfo info);
-  ExpressionPtr exponent(ParseInfo info);
-  ExpressionPtr less(ParseInfo info);
-  ExpressionPtr greater(ParseInfo info);
-  ExpressionPtr equals(ParseInfo info);
-  ExpressionPtr conjunct(ParseInfo info);
-  ExpressionPtr disjunct(ParseInfo info);
-  ExpressionPtr sequence(ParseInfo info);
-  ExpressionPtr assign(ParseInfo info);
-  ExpressionPtr while_(ParseInfo info);
-
-  // arity 3
-
-  ExpressionPtr ifelse(ParseInfo info);
-  ExpressionPtr get(ParseInfo info);
-
-  // arity 4
-
-  ExpressionPtr substitute(ParseInfo info);
 }
 
 #endif // KNIGHT_FUNCS_HPP_INCLUDED

@@ -1,8 +1,8 @@
 #include "parser.hpp"
 
+#include "emit.hpp"
 #include "env.hpp"
 #include "error.hpp"
-#include "funcs.hpp"
 #include "lexer.hpp"
 #include "value.hpp"
 
@@ -13,96 +13,72 @@
 #include <string>
 #include <vector>
 
-using kn::lexer::TokenIter;
-
 namespace {
 
-  using parse_fn = kn::eval::ExpressionPtr(kn::ParseInfo);
-  using function_table = std::array<
-    std::pair<int, parse_fn*>,
+  using emit_fn = kn::parser::Emitted(*)(kn::parser::ASTFrame);
+  using emitter_map = std::array<
+    std::pair<int, emit_fn>,
     std::numeric_limits<unsigned char>::max()>;
 
-  auto functions = []() -> function_table {
-    function_table table = {};
+  auto emitters = []() -> emitter_map {
+    auto table = emitter_map{};
 
-    table['T'] = { 0, kn::funcs::true_ };
-    table['F'] = { 0, kn::funcs::false_ };
-    table['N'] = { 0, kn::funcs::null };
-    table['P'] = { 0, kn::funcs::prompt };
-    table['R'] = { 0, kn::funcs::random };
+    table['T'] = { 0, kn::parser::emit::true_ };
+    table['F'] = { 0, kn::parser::emit::false_ };
+    table['N'] = { 0, kn::parser::emit::null };
+    table['P'] = { 0, kn::parser::emit::prompt };
+    table['R'] = { 0, kn::parser::emit::random };
 
-    table['E'] = { 1, kn::funcs::eval };
-    table['B'] = { 1, kn::funcs::block };
-    table['C'] = { 1, kn::funcs::call };
-    table['`'] = { 1, kn::funcs::shell };
-    table['Q'] = { 1, kn::funcs::quit };
-    table['!'] = { 1, kn::funcs::negate };
-    table['L'] = { 1, kn::funcs::length };
-    table['D'] = { 1, kn::funcs::dump };
-    table['O'] = { 1, kn::funcs::output };
+    table['E'] = { 1, kn::parser::emit::eval };
+    table['B'] = { 1, kn::parser::emit::block };
+    table['C'] = { 1, kn::parser::emit::call };
+    table['`'] = { 1, kn::parser::emit::shell };
+    table['Q'] = { 1, kn::parser::emit::quit };
+    table['!'] = { 1, kn::parser::emit::negate };
+    table['L'] = { 1, kn::parser::emit::length };
+    table['D'] = { 1, kn::parser::emit::dump };
+    table['O'] = { 1, kn::parser::emit::output };
 
-    table['+'] = { 2, kn::funcs::plus };
-    table['-'] = { 2, kn::funcs::minus };
-    table['*'] = { 2, kn::funcs::multiplies };
-    table['/'] = { 2, kn::funcs::divides };
-    table['%'] = { 2, kn::funcs::modulus };
-    table['^'] = { 2, kn::funcs::exponent };
-    table['<'] = { 2, kn::funcs::less };
-    table['>'] = { 2, kn::funcs::greater };
-    table['?'] = { 2, kn::funcs::equals };
-    table['|'] = { 2, kn::funcs::disjunct };
-    table['&'] = { 2, kn::funcs::conjunct };
-    table[';'] = { 2, kn::funcs::sequence };
-    table['='] = { 2, kn::funcs::assign };
-    table['W'] = { 2, kn::funcs::while_ };
+    table['+'] = { 2, kn::parser::emit::plus };
+    table['-'] = { 2, kn::parser::emit::minus };
+    table['*'] = { 2, kn::parser::emit::multiplies };
+    table['/'] = { 2, kn::parser::emit::divides };
+    table['%'] = { 2, kn::parser::emit::modulus };
+    table['^'] = { 2, kn::parser::emit::exponent };
+    table['<'] = { 2, kn::parser::emit::less };
+    table['>'] = { 2, kn::parser::emit::greater };
+    table['?'] = { 2, kn::parser::emit::equals };
+    table['|'] = { 2, kn::parser::emit::disjunct };
+    table['&'] = { 2, kn::parser::emit::conjunct };
+    table[';'] = { 2, kn::parser::emit::sequence };
+    table['='] = { 2, kn::parser::emit::assign };
+    table['W'] = { 2, kn::parser::emit::while_ };
 
-    table['I'] = { 3, kn::funcs::ifelse };
-    table['G'] = { 3, kn::funcs::get };
+    table['I'] = { 3, kn::parser::emit::ifelse };
+    table['G'] = { 3, kn::parser::emit::get };
 
-    table['S'] = { 4, kn::funcs::substitute };
+    table['S'] = { 4, kn::parser::emit::substitute };
 
     return table;
   }();
 
 }
 
+namespace kn::parser {
 
-namespace {
-
-  struct NullExpr : kn::eval::Expression {
-    kn::eval::Value evaluate() const override {
-      return kn::eval::Null{};
-    }
-    void dump(std::ostream& os) const override {
-      os << "Null()";
-    }
-  };
-
-  struct LitExpr : kn::eval::Expression {
-    LitExpr(kn::lexer::StringLiteral s) : data(kn::eval::String(s.data)) {}
-    LitExpr(kn::lexer::NumericLiteral n) : data(kn::eval::Number(n.data)) {}
-
-    kn::eval::Value evaluate() const override {
-      return data;
-    }
-    void dump(std::ostream& os) const override {
-      os << data;
-    }
-    kn::eval::Value data;
-  };
-
-}
-
-namespace kn {
-
-  eval::ExpressionPtr parse(const std::vector<kn::lexer::Token>& tokens) {
+  Emitted parse(const std::vector<kn::lexer::Token>& tokens) {
     if (tokens.empty())
-      return std::make_unique<NullExpr>();
+      return {};
 
     // initialize the stack with a no-op
-    std::vector<ParseInfo> stack;
-    stack.push_back({ tokens.end(), 0, {}, 1, 0 });
-    const auto top = [&stack]() -> decltype(auto) { return stack.back(); };
+    std::vector<ASTFrame> stack;
+    stack.push_back({ 0, {}, 1, 0 });
+
+    // some helper functions
+    const auto top = [&stack]() -> decltype(auto) {
+      return stack.back();
+    };
+    auto& env = eval::Environment::get();
 
     // if we hit end while stack still has stuff:
     //   - we had an expression with missing arguments
@@ -112,25 +88,25 @@ namespace kn {
     auto it = tokens.begin();
     for (; it != tokens.end(); ++it) {
       if (auto x = it->as_string_lit()) {
-        top().add_arg(std::make_unique<LitExpr>(*x));
+        top().add_child(env.get_literal(eval::String(x->data)));
       }
       else if (auto x = it->as_numeric_lit()) {
-        top().add_arg(std::make_unique<LitExpr>(*x));
+        top().add_child(eval::Label::from_constant(x->data));
+      }
+      else if (auto x = it->as_ident()) {
+        top().add_child(env.get_variable(eval::String(x->name)));
       }
       else if (auto x = it->as_function()) {
         auto f_id = static_cast<std::size_t>(x->id);
-        if (auto [arity, fn] = functions[f_id]; fn) {
+        if (auto [arity, fn] = emitters[f_id]; fn) {
           if (arity == 0) {
-            top().add_arg(fn({ it, 0, {}, 0, 0 }));
+            top().add_child(fn({ 0, {}, 0, 0 }));
           } else {
-            stack.push_back({ it, f_id, {}, arity, 0 });
+            stack.push_back({ f_id, {}, arity, 0 });
           }
         } else {
           throw kn::Error(it->range(), "error: unknown function");
         }
-      }
-      else if (auto x = it->as_ident()) {
-        top().add_arg(std::make_unique<eval::IdentExpr>(std::string(x->name)));
       }
       else {
         throw kn::Error(it->range(), "error: unknown token type");
@@ -143,17 +119,17 @@ namespace kn {
           if (++it != tokens.end())
             throw kn::Error(it->pos(), "error: unparsed tokens");
           else
-            return std::move(top().args[0]);
+            return top().children[0];
         } else {
           // pop the stack off, run the function, add to previous layer
-          auto expr = functions[top().func_id].second(std::move(top()));
+          auto expr = emitters[top().func].second(std::move(top()));
           stack.pop_back();
-          top().add_arg(std::move(expr));
+          top().add_child(std::move(expr));
         }
       }
     }
 
-    throw kn::Error(stack.back().token->pos(), "error: unexpected EOF");
+    throw kn::Error("error: unexpected EOF");
   }
 
 }
