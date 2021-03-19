@@ -10,6 +10,8 @@
 
 #include "env.hpp"
 #include "error.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
 #include "value.hpp"
 
 using namespace kn::eval;
@@ -32,12 +34,12 @@ namespace {
 #endif
   }
 
-  void set_result(const CodePoint* bytecode, std::size_t offset, Value v) {
+  void set_result(ByteCode& bytecode, std::size_t offset, Value v) {
     Environment::get().assign(bytecode[offset + 1].label, std::move(v));
   }
 
   template <typename F>
-  std::size_t binary_math_op(const CodePoint* bytecode, std::size_t offset, F f) {
+  std::size_t binary_math_op(ByteCode& bytecode, std::size_t offset, F f) {
     auto lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
@@ -49,13 +51,13 @@ namespace {
   }
 
   template <typename F>
-  std::size_t binary_compare_op(const CodePoint* bytecode, std::size_t offset, F f) {
+  std::size_t binary_compare_op(ByteCode& bytecode, std::size_t offset, F f) {
     auto lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
       set_result(bytecode, offset, f(x, y));
-    } else if (lhs.is_number()) {
+    } else if (lhs.is_string()) {
       auto x = lhs.to_string();
       auto y = get_value(bytecode[offset + 3]).to_string();
       set_result(bytecode, offset, f(x, y));
@@ -81,11 +83,11 @@ namespace kn::funcs {
 
   // control flow
 
-  std::size_t no_op(const CodePoint*, std::size_t offset) {
+  std::size_t no_op(ByteCode&, std::size_t offset) {
     return offset + 1;
   }
 
-  std::size_t error(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t error(ByteCode& bytecode, std::size_t offset) {
     using namespace std::literals;
     throw kn::Error("error executing OpCode="s +
                     std::to_string(static_cast<std::size_t>(bytecode[offset].op)) +
@@ -93,13 +95,13 @@ namespace kn::funcs {
                     std::to_string(offset));
   }
 
-  std::size_t call(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t call(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Call);
     call_stack.push_back({ offset, bytecode[offset + 1].label });
     return get_value(bytecode[offset + 2]).to_block().address;
   }
 
-  std::size_t return_(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t return_(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Return);
     auto frame = call_stack.back();
     call_stack.pop_back();
@@ -107,13 +109,13 @@ namespace kn::funcs {
     return frame.caller + 3;
   }
 
-  std::size_t jump(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t jump(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Jump);
     assert(bytecode[offset + 1].label.cat() == LabelCat::JumpTarget);
     return bytecode[offset + 1].label.id();
   }
 
-  std::size_t jump_if(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t jump_if(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::JumpIf);
     assert(bytecode[offset + 1].label.cat() == LabelCat::JumpTarget);
 
@@ -122,7 +124,7 @@ namespace kn::funcs {
     return offset + 3;
   }
 
-  std::size_t jump_if_not(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t jump_if_not(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::JumpIfNot);
     assert(bytecode[offset + 1].label.cat() == LabelCat::JumpTarget);
 
@@ -132,7 +134,7 @@ namespace kn::funcs {
   }
 
   // arithmetic
-  std::size_t plus(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t plus(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Plus);
 
     auto lhs = get_value(bytecode[offset + 2]);
@@ -151,8 +153,8 @@ namespace kn::funcs {
     return offset + 4;
   }
 
-  std::size_t multiplies(const CodePoint* bytecode, std::size_t offset) {
-    assert(bytecode[offset].op == OpCode::Plus);
+  std::size_t multiplies(ByteCode& bytecode, std::size_t offset) {
+    assert(bytecode[offset].op == OpCode::Multiplies);
 
     auto lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
@@ -173,22 +175,22 @@ namespace kn::funcs {
     return offset + 4;
   }
 
-  std::size_t minus(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t minus(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Minus);
     return binary_math_op(bytecode, offset, std::minus{});
   }
 
-  std::size_t divides(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t divides(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Divides);
     return binary_math_op(bytecode, offset, std::divides{});
   }
 
-  std::size_t modulus(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t modulus(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Modulus);
     return binary_math_op(bytecode, offset, std::modulus{});
   }
 
-  std::size_t exponent(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t exponent(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Exponent);
     return binary_math_op(bytecode, offset, [](Number lhs, Number rhs) {
       return static_cast<Number>(std::pow(lhs, rhs)); });
@@ -196,24 +198,24 @@ namespace kn::funcs {
 
   // logical
 
-  std::size_t negate(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t negate(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Negate);
     auto val = not get_value(bytecode[offset + 2]).to_bool();
     set_result(bytecode, offset, val);
     return offset + 3;
   }
 
-  std::size_t less(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t less(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Less);
     return binary_compare_op(bytecode, offset, std::less{});
   }
 
-  std::size_t greater(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t greater(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Greater);
     return binary_compare_op(bytecode, offset, std::greater{});
   }
 
-  std::size_t equals(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t equals(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Equals);
     auto lhs = get_value(bytecode[offset + 2]);
     auto rhs = get_value(bytecode[offset + 3]);
@@ -222,14 +224,14 @@ namespace kn::funcs {
   }
 
   // string
-  std::size_t length(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t length(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Length);
     auto str = get_value(bytecode[offset + 2]).to_string();
     set_result(bytecode, offset, static_cast<Number>(str.length()));
     return offset + 3;
   }
 
-  std::size_t get(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t get(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Get);
     auto str = get_value(bytecode[offset + 2]).to_string();
     auto pos = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
@@ -238,7 +240,7 @@ namespace kn::funcs {
     return offset + 5;
   }
 
-  std::size_t substitute(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t substitute(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Substitute);
     auto str = get_value(bytecode[offset + 2]).to_string();
     auto pos = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
@@ -250,13 +252,13 @@ namespace kn::funcs {
 
   // environment
 
-  std::size_t assign(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t assign(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Assign);
     set_result(bytecode, offset, get_value(bytecode[offset + 2]));
     return offset + 3;
   }
 
-  std::size_t prompt(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t prompt(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Prompt);
     auto line = std::string{};
     std::getline(std::cin, line);
@@ -264,7 +266,7 @@ namespace kn::funcs {
     return offset + 2;
   }
 
-  std::size_t output(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t output(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Output);
     auto str = get_value(bytecode[offset + 1]).to_string();
     if (not str.empty() and str.back() == '\\') {
@@ -276,7 +278,7 @@ namespace kn::funcs {
     return offset + 2;
   }
 
-  std::size_t random(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t random(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Random);
     thread_local auto generator = std::mt19937(std::random_device{}());
     thread_local auto dist = std::uniform_int_distribution(
@@ -285,24 +287,49 @@ namespace kn::funcs {
     return offset + 2;
   }
 
-  std::size_t shell(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t shell(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Shell);
     set_result(bytecode, offset,
                open_shell(get_value(bytecode[offset + 2]).to_string()));
     return offset + 3;
   }
 
-  std::size_t quit(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t quit(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Quit);
     std::exit(get_value(bytecode[offset + 1]).to_number());
   }
 
-  std::size_t eval(const CodePoint* bytecode, std::size_t offset) {
+  // TODO: optimise to perhaps reuse temporaries?
+  std::size_t eval(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Eval);
-    // TODO
+
+    // parse input and generate parsetree
+    auto input = get_value(bytecode[offset + 2]).to_string();
+    auto tokens = kn::lexer::tokenise(input);
+    auto program = kn::parser::parse(tokens);
+
+    // store offsets and prepare new bytecode
+    auto next_statement = offset + 3;
+    auto new_offset = bytecode.size();
+    auto new_bytecode = kn::eval::prepare(program, bytecode.size());
+
+    // store the result into this program's result variable
+    new_bytecode.emplace_back(OpCode::Assign);
+    new_bytecode.emplace_back(bytecode[offset + 1].label);
+    new_bytecode.emplace_back(program.result);
+
+    // add in a jump at the end to come back
+    new_bytecode.emplace_back(OpCode::Jump);
+    new_bytecode.emplace_back(Label(LabelCat::JumpTarget, next_statement));
+
+    // add the bytecode to the current execution set
+    bytecode.insert(bytecode.end(), new_bytecode.begin(), new_bytecode.end());
+
+    // return the start of the newly evaluated bytecode
+    return new_offset;
   }
 
-  std::size_t dump(const CodePoint* bytecode, std::size_t offset) {
+  std::size_t dump(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Dump);
     std::cout << get_value(bytecode[offset + 1]);
     return offset + 2;

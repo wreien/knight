@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <vector>
 
 namespace kn::parser {
 
@@ -118,8 +119,14 @@ namespace kn::eval {
     OpCode op;
     Label label;
   };
+  using ByteCode = std::vector<CodePoint>;
 
-  Value run(const parser::Emitted& program);
+  // prepare a program for execution
+  // `offset` specifies how much to offset new addresses in the resultant code
+  ByteCode prepare(const parser::Emitted& program, std::size_t offset = 0);
+
+  // run a prepared program
+  void run(ByteCode program);
 
 }
 

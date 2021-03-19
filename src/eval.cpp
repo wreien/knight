@@ -16,7 +16,7 @@ namespace {
   using namespace kn::eval;
 
   using op_table = std::array<
-    std::pair<int, std::size_t(*)(const CodePoint* bytecode, std::size_t offset)>,
+    std::pair<int, std::size_t(*)(ByteCode& bytecode, std::size_t offset)>,
     static_cast<std::size_t>(OpCode::NumberOfOps)>;
 
   // TODO: don't split this very particular important information
@@ -58,35 +58,32 @@ namespace {
     return op_funcs[static_cast<std::size_t>(op)].second;
   }
 
-  Value to_value(Label l) {
-    if (l.cat() == LabelCat::Constant)
-      return Number(l.id());
-    else if (l.cat() == LabelCat::Variable)
-      return Environment::get().value(l);
-    else
-      return Null{};
-  }
+  // map from label ID -> label offset
+  auto labels = std::unordered_map<std::size_t, std::size_t>{};
+
+}
+
+namespace kn::eval {
 
   // prepare the instructions for execution:
   // remove labels, determine jump offsets, and flatten structure
-  std::vector<CodePoint> prepare(const std::deque<Operation>& instructions) {
+  ByteCode prepare(const parser::Emitted& program, std::size_t label_offset) {
+    const auto& instructions = program.instructions;
+
     // our new list
     // potentially overreserve, but we're not super worried about that generally
     // (the average instruction has one opcode and two labels)
     auto rewritten = std::vector<CodePoint>{};
     rewritten.reserve(3 * instructions.size());
 
-    // map from offset -> label ID
-    auto offsets = std::vector<std::pair<std::size_t, std::size_t>>{};
-
-    // map from label ID -> label offset
-    auto labels = std::unordered_map<std::size_t, std::size_t>{};
+    // map from local offset -> label ID
+    auto local_offsets = std::vector<std::pair<std::size_t, std::size_t>>{};
 
     for (const auto& op : instructions) switch (op.op) {
       case OpCode::Label: {
         assert(op.labels[0].cat() == LabelCat::JumpTarget);
         [[maybe_unused]] auto [_, s] = labels.try_emplace(
-          op.labels[0].id(), rewritten.size());
+          op.labels[0].id(), rewritten.size() + label_offset);
         assert(s);
       } break;
 
@@ -95,7 +92,7 @@ namespace {
         assert(op.labels[0].cat() != LabelCat::JumpTarget);
         rewritten.emplace_back(op.labels[0]);
         if (op.labels[1].cat() == LabelCat::JumpTarget) {
-          offsets.emplace_back(rewritten.size(), op.labels[1].id());
+          local_offsets.emplace_back(rewritten.size(), op.labels[1].id());
           rewritten.emplace_back(Label{});  // placeholder
         } else {
           rewritten.emplace_back(op.labels[1]);
@@ -107,7 +104,7 @@ namespace {
       case OpCode::JumpIfNot: {
         rewritten.emplace_back(op.op);
         assert(op.labels[0].cat() == LabelCat::JumpTarget);
-        offsets.emplace_back(rewritten.size(), op.labels[0].id());
+        local_offsets.emplace_back(rewritten.size(), op.labels[0].id());
         rewritten.emplace_back(Label{});  // placeholder
         if (op.op != OpCode::Jump) {
           assert(op.labels[1].cat() != LabelCat::JumpTarget);
@@ -119,7 +116,7 @@ namespace {
         rewritten.emplace_back(op.op);
         for (int i = 0; i < get_num_labels(op.op); ++i) {
           if (op.labels[i].cat() == LabelCat::JumpTarget) {
-            offsets.emplace_back(rewritten.size(), op.labels[i].id());
+            local_offsets.emplace_back(rewritten.size(), op.labels[i].id());
             rewritten.emplace_back(Label{});  // placeholder
           } else {
             rewritten.emplace_back(op.labels[i]);
@@ -127,11 +124,9 @@ namespace {
         }
       } break;
     }
-    // in case we have a jump label as the very last instruction
-    rewritten.emplace_back(OpCode::NoOp);
 
     // now we do our mapping back into the offset table
-    for (auto [x, id] : offsets) {
+    for (auto [x, id] : local_offsets) {
       if (auto it = labels.find(id); it != labels.end())
         rewritten[x] = CodePoint(Label(LabelCat::JumpTarget, it->second));
     }
@@ -139,20 +134,16 @@ namespace {
     return rewritten;
   }
 
-}
-
-namespace kn::eval {
-
-  Value run(const parser::Emitted& program) {
-    auto bytecode = prepare(program.instructions);
+  void run(ByteCode program) {
+    // make sure we have a "finish" at the end of the program
+    program.emplace_back(OpCode::Quit);
+    program.emplace_back(Label::from_constant(0));
 
     std::size_t offset = 0;
-    while (offset < bytecode.size()) {
-      auto op = bytecode[offset].op;
-      offset = get_function(op)(bytecode.data(), offset);
+    while (offset < program.size()) {
+      auto op = program[offset].op;
+      offset = get_function(op)(program, offset);
     }
-
-    return to_value(program.result);
   }
 
 }

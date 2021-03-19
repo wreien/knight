@@ -64,6 +64,10 @@ namespace kn::eval {
   const Value& Environment::value(const Label& v) const {
     assert(v.cat() == LabelCat::Variable);
     if (not values[v.id()]) {
+      for (std::size_t i = 0; i < values.size(); ++i) {
+        std::cout << names[i] << " => " <<
+          (values[i] ? *values[i] : "#UNSET#") << '\n';
+      }
       throw kn::Error("error: evaluating undefined variable " + names[v.id()]);
     }
     return *values[v.id()];

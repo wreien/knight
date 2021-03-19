@@ -29,11 +29,9 @@ int main(int argc, char** argv) {
   try {
     auto tokens = kn::lexer::tokenise(input);
     auto program = kn::parser::parse(tokens);
-
-    debug(program);
-
-    auto value = kn::eval::run(program);
-    //std::cout << "result: " << value << '\n';
+    //debug(program)
+    auto bytecode = kn::eval::prepare(program);
+    kn::eval::run(std::move(bytecode));
   } catch (const kn::Error& err) {
     std::cout << err.what() << '\n';
     return 1;
