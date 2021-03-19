@@ -7,6 +7,14 @@
 #include <vector>
 #include <unordered_map>
 
+#ifndef NDEBUG
+#include "debug.hpp"
+#include <iostream>
+#include <iomanip>
+#include <string>
+#include <sstream>
+#endif
+
 #include "env.hpp"
 #include "funcs.hpp"
 #include "parser.hpp"
@@ -145,5 +153,79 @@ namespace kn::eval {
       offset = get_function(op)(program, offset);
     }
   }
+
+#ifndef NDEBUG
+  namespace {
+
+    void print_whole_program(const ByteCode& program) {
+      for (std::size_t offset = 0; offset < program.size(); ++offset) {
+        std::cout << std::setw(6) << offset << ": " << program[offset].op;
+        for (int i = 0; i < get_num_labels(program[offset].op); ++i)
+          std::cout << program[offset + (std::size_t)i + 1].label;
+        offset += (std::size_t)get_num_labels(program[offset].op);
+        std::cout << '\n';
+      }
+    }
+
+  }
+
+  void debug(ByteCode program) {
+    // make sure we have a "finish" at the end of the program
+    program.emplace_back(OpCode::Quit);
+    program.emplace_back(Label::from_constant(0));
+
+    std::cout << std::right;
+    std::cout << "assembled:\n";
+    print_whole_program(program);
+
+    std::cout << "\n\nStarting debugging:\n\n";
+    std::size_t offset = 0;
+    std::size_t old_size = program.size();
+    std::size_t breakpoint = 0;
+
+    while (offset < program.size()) {
+      auto op = program[offset].op;
+      std::cout << std::setw(4) << offset << "[" << op << "]> ";
+      std::string inp;
+      std::getline(std::cin, inp);
+      if (inp[0] == 'l') {
+        print_whole_program(program);
+      } else if (inp[0] == 'p') {
+        std::string command;
+        std::size_t varid;
+        std::istringstream iss(inp);
+        iss >> command;
+        while (iss >> varid) {
+          auto label = Label(LabelCat::Variable, varid);
+          std::cout << "[v:" << varid << "] => "
+                    << Environment::get().nameof(label) << "/";
+          if (Environment::get().has_value(label))
+            std::cout << Environment::get().value(label) << '\n';
+          else
+            std::cout << "##\n";
+        }
+      } else if (inp[0] == 'n') {
+        offset = get_function(op)(program, offset);
+        if (program.size() != old_size) {
+          std::cout << "!!EVAL\n";
+          old_size = program.size();
+        }
+      } else if (inp[0] == 'c') {
+        while (offset < program.size() and offset != breakpoint) {
+          offset = get_function(program[offset].op)(program, offset);
+          if (program.size() != old_size) old_size = program.size();
+        }
+      } else if (inp[0] == 'd') {
+        Environment::get().dump_vars();
+      } else if (inp[0] == 'b') {
+        std::istringstream iss(inp);
+        iss >> inp >> breakpoint;
+        std::cout << "set breakpoint.\n";
+      } else if (inp[0] == 'q') {
+        break;
+      }
+    }
+  }
+#endif
 
 }

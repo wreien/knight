@@ -26,8 +26,13 @@ namespace kn::eval {
 
     const std::string& nameof(const Label& v) const;
 
+    bool has_value(const Label& v) const;
     const Value& value(const Label& v) const;
     const Value& assign(const Label& v, Value x);
+
+#ifndef NDEBUG
+    void dump_vars() const;
+#endif
 
   private:
     Environment();

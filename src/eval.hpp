@@ -128,6 +128,11 @@ namespace kn::eval {
   // run a prepared program
   void run(ByteCode program);
 
+#ifndef NDEBUG
+  // step through a prepared program
+  void debug(ByteCode program);
+#endif
+
 }
 
 #endif // KNIGHT_EVAL_HPP_INCLUDED

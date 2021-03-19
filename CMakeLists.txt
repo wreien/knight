@@ -11,6 +11,7 @@ set_target_properties(knight PROPERTIES
 )
 
 target_sources(knight PRIVATE
+    src/debug.hpp
     src/emit.cpp
     src/emit.hpp
     src/env.cpp
