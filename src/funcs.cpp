@@ -24,10 +24,12 @@ namespace {
       return Number(cp.label.id());
     case LabelCat::JumpTarget:
       return Block{ cp.label.id() };
+    case LabelCat::Literal:
+    case LabelCat::Temporary:
     case LabelCat::Variable:
       return Environment::get().value(cp.label);
     case LabelCat::Unused:
-      throw kn::Error("error: read placeholder value while parsing");
+      throw kn::Error("error: read placeholder value while evaluating");
     }
 #ifdef __GNUC__
     __builtin_unreachable();
@@ -71,12 +73,6 @@ namespace {
     return offset + 4;
   }
 
-  struct CallStack {
-    std::size_t caller;
-    Label result;
-  };
-  std::vector<CallStack> call_stack;
-
 }
 
 namespace kn::funcs {
@@ -97,16 +93,29 @@ namespace kn::funcs {
 
   std::size_t call(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Call);
-    call_stack.push_back({ offset, bytecode[offset + 1].label });
-    return get_value(bytecode[offset + 2]).to_block().address;
+
+    // ensure call structure is correct
+    auto dest = get_value(bytecode[offset + 2]).to_block().address;
+    assert(bytecode[dest - 2].op == OpCode::BlockData);
+    auto num_temps = bytecode[dest - 1].label.id();
+
+    // bump the call stack
+    Environment::get().push_frame(offset + 3, bytecode[offset + 1].label, num_temps);
+
+    // and do a jump to the subroutine
+    return dest;
   }
 
   std::size_t return_(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Return);
-    auto frame = call_stack.back();
-    call_stack.pop_back();
-    Environment::get().assign(frame.result, get_value(bytecode[offset + 1]));
-    return frame.caller + 3;
+
+    // we're leaving a frame, bump the call stack
+    auto value = get_value(bytecode[offset + 1]);
+    auto [retaddr, result] = Environment::get().pop_frame();
+    Environment::get().assign(result, std::move(value));
+
+    // return to sender
+    return retaddr;
   }
 
   std::size_t jump(ByteCode& bytecode, std::size_t offset) {
@@ -299,7 +308,7 @@ namespace kn::funcs {
     std::exit(get_value(bytecode[offset + 1]).to_number());
   }
 
-  // TODO: optimise to perhaps reuse temporaries?
+  // TODO: optimise to perhaps cache identical evaluations?
   std::size_t eval(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Eval);
 
@@ -310,17 +319,13 @@ namespace kn::funcs {
 
     // store offsets and prepare new bytecode
     auto next_statement = offset + 3;
-    auto new_offset = bytecode.size();
+    auto new_offset = bytecode.size() + 2;  // see `eval::run`
     auto new_bytecode = kn::eval::prepare(program, bytecode.size());
 
-    // store the result into this program's result variable
-    new_bytecode.emplace_back(OpCode::Assign);
-    new_bytecode.emplace_back(bytecode[offset + 1].label);
-    new_bytecode.emplace_back(program.result);
-
-    // add in a jump at the end to come back
-    new_bytecode.emplace_back(OpCode::Jump);
-    new_bytecode.emplace_back(Label(LabelCat::JumpTarget, next_statement));
+    // get block data and construct new stack frame
+    assert(new_bytecode[0].op == OpCode::BlockData);
+    Environment::get().push_frame(
+      next_statement, bytecode[offset + 1].label, new_bytecode[1].label.id());
 
     // add the bytecode to the current execution set
     bytecode.insert(bytecode.end(), new_bytecode.begin(), new_bytecode.end());

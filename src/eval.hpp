@@ -16,10 +16,18 @@ namespace kn::eval {
   struct Value;
 
   enum class LabelCat {
+    // not a valid label, used for sanity checking
     Unused,
+    // immutable: a number, e.g. 100
     Constant,
+    // mutable: a variable, can be assigned to
     Variable,
+    // replaced: references a label to be jumped to
     JumpTarget,
+    // immutable: a fresh temporary
+    Temporary,
+    // immutable: a literal
+    Literal,
   };
 
   class Label {
@@ -42,8 +50,25 @@ namespace kn::eval {
       return Label(LabelCat::Constant, n);
     }
 
-    LabelCat cat() const noexcept { return m_cat; }
-    std::size_t id() const noexcept { return m_id; }
+    LabelCat cat() const noexcept { 
+      return m_cat; 
+    }
+
+    std::size_t id() const noexcept { 
+      return m_id; 
+    }
+
+    // can the value change
+    bool is_mutable() const noexcept { 
+      return cat() != LabelCat::Variable; 
+    }
+
+    // do we need to dereference the label to get a result
+    bool needs_eval() const noexcept {
+      return cat() == LabelCat::Variable
+          or cat() == LabelCat::Literal
+          or cat() == LabelCat::Temporary;
+    }
 
     friend bool operator==(Label a, Label b) noexcept {
       return a.m_cat == b.m_cat and a.m_id == b.m_id;
@@ -60,6 +85,7 @@ namespace kn::eval {
 
     // control flow
     Label,
+    BlockData,
     Call,
     Return,
     Jump,

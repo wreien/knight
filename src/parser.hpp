@@ -26,6 +26,29 @@ namespace kn::parser {
     std::deque<eval::Operation> instructions = {};
   };
 
+  // general parsing stuff
+  struct ParseInfo {
+    std::vector<std::deque<eval::Operation>> blocks = {};
+    std::vector<std::size_t> temp_stack = { 0 };
+    std::size_t jump_labels = 0;
+
+    void push_frame() {
+      temp_stack.emplace_back(0);
+    }
+    std::size_t pop_frame() noexcept {
+      auto num_temps = temp_stack.back();
+      temp_stack.pop_back();
+      return num_temps;
+    }
+    eval::Label new_temp() noexcept {
+      assert(not temp_stack.empty());
+      return { eval::LabelCat::Temporary, temp_stack.back()++ };
+    }
+    eval::Label new_jump() noexcept {
+      return { eval::LabelCat::JumpTarget, jump_labels++ };
+    }
+  };
+
   // information about the current stage of parsing
   struct ASTFrame {
     // the operation this will perform

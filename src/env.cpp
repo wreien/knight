@@ -9,15 +9,26 @@ namespace kn::eval {
 
   Environment::Environment()
     : id_map()
+    , values()
+    , names()
     , stringlit_map()
-    , values{ { Null{} }, { true }, { false } }
-    , names{ "NULL", "TRUE", "FALSE" }
-    , jumptarget_id{ 0 }
+    , literals{ { Null{} }, { true }, { false } }
+    , stack()
   {}
 
   Environment& Environment::get() {
     static Environment env;
     return env;
+  }
+
+  void Environment::push_frame(std::size_t retaddr, Label result, std::size_t num_temps) {
+    stack.emplace_back(retaddr, result, num_temps);
+  }
+
+  std::pair<std::size_t, Label> Environment::pop_frame() {
+    auto res = std::pair{ stack.back().retaddr, stack.back().result };
+    stack.pop_back();
+    return res;
   }
 
   Label Environment::get_variable(const std::string& name) {
@@ -29,54 +40,56 @@ namespace kn::eval {
     return { LabelCat::Variable, it->second };
   }
 
-  Label Environment::get_temp() {
-    names.push_back("v:" + std::to_string(names.size()));
-    values.emplace_back();
-    return { LabelCat::Variable, values.size() - 1 };
-  }
-
   Label Environment::get_literal(String s) {
-    auto [it, inserted] = stringlit_map.try_emplace(s, values.size());
+    auto [it, inserted] = stringlit_map.try_emplace(s, literals.size());
     if (inserted) {
-      names.emplace_back("s:" + std::to_string(names.size()));
-      values.emplace_back(std::move(s));
+      literals.emplace_back(std::move(s));
     }
-    return { LabelCat::Variable, it->second };
+    return { LabelCat::Literal, it->second };
   }
 
   Label Environment::get_literal(Boolean b) const noexcept {
-    return { LabelCat::Variable, b ? 1u : 2u };
+    return { LabelCat::Literal, b ? 1u : 2u };
   }
 
   Label Environment::get_literal(Null) const noexcept {
-    return { LabelCat::Variable, 0 };
+    return { LabelCat::Literal, 0 };
   }
 
-  Label Environment::get_jump() {
-    return { LabelCat::JumpTarget, jumptarget_id++ };
-  }
-
-  const std::string& Environment::nameof(const Label& v) const {
+  const std::string& Environment::nameof(Label v) const {
     assert(v.cat() == LabelCat::Variable);
     return names[v.id()];
   }
 
-  bool Environment::has_value(const Label& v) const {
-    return v.cat() == LabelCat::Variable and values[v.id()];
+  bool Environment::has_value(Label v) const {
+    assert(v.needs_eval());
+    return v.cat() == LabelCat::Literal
+      or (v.cat() == LabelCat::Variable and values[v.id()])
+      or (v.cat() == LabelCat::Temporary and temps()[v.id()]);
   }
 
-  const Value& Environment::value(const Label& v) const {
-    assert(v.cat() == LabelCat::Variable);
-    if (not values[v.id()]) {
-      throw kn::Error("error: evaluating undefined variable " + names[v.id()]);
+  const Value& Environment::value(Label v) const {
+    assert(v.needs_eval());
+    if (v.cat() == LabelCat::Variable) {
+      if (not values[v.id()]) {
+        throw kn::Error("error: evaluating undefined variable " + names[v.id()]);
+      }
+      return *values[v.id()];
+    } else if (v.cat() == LabelCat::Literal) {
+      return literals[v.id()];
+    } else if (v.cat() == LabelCat::Temporary) {
+      assert(temps()[v.id()].has_value());
+      return *temps()[v.id()];
     }
-    return *values[v.id()];
+#ifdef __GNUC__
+    __builtin_unreachable();
+#endif
   }
 
 #ifndef NDEBUG
   void Environment::dump_vars() const {
     for (std::size_t i = 0; i < values.size(); ++i) {
-      std::cout << names[i] << " => ";
+      std::cout << "[v:" << i << "] " << names[i] << " => ";
       if (values[i])
         std::cout << *values[i];
       else
@@ -86,10 +99,15 @@ namespace kn::eval {
   }
 #endif
 
-  const Value& Environment::assign(const Label& v, Value x) {
-    assert(v.cat() == LabelCat::Variable);
-    assert(v.id() >= 3);
-    return values[v.id()].emplace(std::move(x));
+  const Value& Environment::assign(Label v, Value x) {
+    // must be a variable or temporary to write to it
+    assert(v.cat() == LabelCat::Variable or v.cat() == LabelCat::Temporary);
+
+    if (v.cat() == LabelCat::Variable) {
+      return values[v.id()].emplace(std::move(x));
+    } else {
+      return temps()[v.id()].emplace(std::move(x));
+    }
   }
 
 }

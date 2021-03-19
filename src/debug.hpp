@@ -6,6 +6,7 @@
 #include <iostream>
 #include <iomanip>
 
+#include "env.hpp"
 #include "eval.hpp"
 #include "parser.hpp"
 
@@ -16,11 +17,15 @@ namespace kn::eval {
     case kn::eval::LabelCat::Unused:
       return os << "[?]";
     case kn::eval::LabelCat::Constant:
-      return os << "[c:" << l.id() << "]";
+      return os << "$" << l.id();
     case kn::eval::LabelCat::Variable:
       return os << "[v:" << l.id() << "]";
+    case kn::eval::LabelCat::Temporary:
+      return os << "[t:" << l.id() << "]";
+    case kn::eval::LabelCat::Literal:
+      return os << Environment::get().value(l);
     case kn::eval::LabelCat::JumpTarget:
-      return os << "[l:" << l.id() << "]";
+      return os << "[j:" << l.id() << "]";
     default:
       return os << "[!]";
     }
@@ -29,9 +34,11 @@ namespace kn::eval {
   inline std::ostream& operator<<(std::ostream& os, OpCode op) {
     switch (op) {
     case kn::eval::OpCode::NoOp:
+      os << "    "; break;
     case kn::eval::OpCode::Label:
-    case kn::eval::OpCode::NumberOfOps:
-      break;
+      os << "#l  "; break;
+    case kn::eval::OpCode::BlockData:
+      os << "#b  "; break;
     case kn::eval::OpCode::Call:
       os << "cl  "; break;
     case kn::eval::OpCode::Return:
@@ -92,6 +99,9 @@ namespace kn::eval {
       os << "ev  "; break;
     case kn::eval::OpCode::Dump:
       os << "dmp "; break;
+
+    case kn::eval::OpCode::NumberOfOps:
+      break;
     }
 
     return os;
@@ -112,7 +122,7 @@ namespace kn::parser {
       for (std::size_t i = 0; i < kn::eval::max_labels; i++) {
         if (op.labels[i].cat() == kn::eval::LabelCat::Unused)
           break;
-        os << op.labels[i];
+        os << op.labels[i] << ' ';
       }
       os << "\n";
     }

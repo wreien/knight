@@ -32,6 +32,7 @@ namespace {
   inline constexpr auto op_funcs = op_table{{
     { 0, kn::funcs::no_op },
     { 1, kn::funcs::error },    // label
+    { 1, kn::funcs::error },    // block_label
     { 2, kn::funcs::call },
     { 1, kn::funcs::return_ },
     { 1, kn::funcs::jump },
@@ -144,10 +145,19 @@ namespace kn::eval {
 
   void run(ByteCode program) {
     // make sure we have a "finish" at the end of the program
+    auto end_pos = program.size();
+    auto retval = Environment::get().get_variable("#retval");
     program.emplace_back(OpCode::Quit);
-    program.emplace_back(Label::from_constant(0));
+    program.emplace_back(retval);
 
-    std::size_t offset = 0;
+    // set up the stack frame
+    assert(program[0].op == OpCode::BlockData);
+    Environment::get().push_frame(end_pos, retval, program[1].label.id());
+
+    // ignore the block data at the start of the program
+    std::size_t offset = 2;  // TODO: make this a global constant
+
+    // run until we stop
     while (offset < program.size()) {
       auto op = program[offset].op;
       offset = get_function(op)(program, offset);
@@ -161,7 +171,7 @@ namespace kn::eval {
       for (std::size_t offset = 0; offset < program.size(); ++offset) {
         std::cout << std::setw(6) << offset << ": " << program[offset].op;
         for (int i = 0; i < get_num_labels(program[offset].op); ++i)
-          std::cout << program[offset + (std::size_t)i + 1].label;
+          std::cout << program[offset + (std::size_t)i + 1].label << ' ';
         offset += (std::size_t)get_num_labels(program[offset].op);
         std::cout << '\n';
       }
@@ -171,15 +181,21 @@ namespace kn::eval {
 
   void debug(ByteCode program) {
     // make sure we have a "finish" at the end of the program
+    auto end_pos = program.size();
+    auto retval = Environment::get().get_variable("#retval");
     program.emplace_back(OpCode::Quit);
-    program.emplace_back(Label::from_constant(0));
+    program.emplace_back(retval);
+
+    // set up the stack frame
+    assert(program[0].op == OpCode::BlockData);
+    Environment::get().push_frame(end_pos, retval, program[1].label.id());
 
     std::cout << std::right;
     std::cout << "assembled:\n";
     print_whole_program(program);
 
     std::cout << "\n\nStarting debugging:\n\n";
-    std::size_t offset = 0;
+    std::size_t offset = 2;  // see comment in `run`
     std::size_t old_size = program.size();
     std::size_t breakpoint = 0;
 
@@ -196,13 +212,12 @@ namespace kn::eval {
         std::istringstream iss(inp);
         iss >> command;
         while (iss >> varid) {
-          auto label = Label(LabelCat::Variable, varid);
-          std::cout << "[v:" << varid << "] => "
-                    << Environment::get().nameof(label) << "/";
+          auto label = Label(LabelCat::Temporary, varid);
+          std::cout << "[t:" << varid << "] => ";
           if (Environment::get().has_value(label))
             std::cout << Environment::get().value(label) << '\n';
           else
-            std::cout << "##\n";
+            std::cout << "#empty\n";
         }
       } else if (inp[0] == 'n') {
         offset = get_function(op)(program, offset);

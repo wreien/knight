@@ -12,14 +12,20 @@ using env = kn::eval::Environment;
 
 namespace {
 
-  Label new_temp() { return env::get().get_temp(); }
-  Label new_label() { return env::get().get_jump(); }
+  Emitted& cache_expr(Emitted& expr, ParseInfo& info) {
+    if (expr.result.cat() == LabelCat::Variable) {
+      auto cache = info.new_temp();
+      expr.instructions.emplace_back(OpCode::Assign, cache, expr.result);
+      expr.result = cache;
+    }
+    return expr;
+  }
 
-  Emitted gen_onearg(ASTFrame&& ast, OpCode op) {
+  Emitted gen_onearg(ASTFrame&& ast, ParseInfo& info, OpCode op) {
     assert(ast.arity == 1);
     auto& x = ast.children[0];
 
-    auto result = new_temp();
+    auto result = info.new_temp();
     x.instructions.emplace_back(op, result, x.result);
     return { result, std::move(x.instructions) };
   }
@@ -33,12 +39,15 @@ namespace {
     return { result, std::move(x.instructions) };
   }
 
-  Emitted gen_twoarg(ASTFrame&& ast, OpCode op) {
+  Emitted gen_twoarg(ASTFrame&& ast, ParseInfo& info, OpCode op) {
     assert(ast.arity == 2);
-    auto& lhs = ast.children[0];
+
+    // if the result variable is mutable, make sure to cache it
+    // so that we don't break evaluation order
+    auto& lhs = cache_expr(ast.children[0], info);
     auto& rhs = ast.children[1];
 
-    auto result = new_temp();
+    auto result = info.new_temp();
     lhs.instructions.insert(
       lhs.instructions.end(),
       rhs.instructions.begin(), rhs.instructions.end());
@@ -48,13 +57,13 @@ namespace {
 
   // for conjunct and disjunt;
   // brancher is one of JumpIf or JumpIfNot
-  Emitted shortcircuit_logic(ASTFrame&& ast, OpCode brancher) {
+  Emitted shortcircuit_logic(ASTFrame&& ast, ParseInfo& info, OpCode brancher) {
     assert(ast.arity == 2);
     auto& lhs = ast.children[0];
     auto& rhs = ast.children[1];
 
-    auto finish = new_label();
-    auto result = new_temp();
+    auto finish = info.new_jump();
+    auto result = info.new_temp();
 
     lhs.instructions.emplace_back(OpCode::Assign, result, lhs.result);
     lhs.instructions.emplace_back(brancher, finish, lhs.result);
@@ -66,6 +75,7 @@ namespace {
     lhs.instructions.emplace_back(OpCode::Label, finish);
     return { result, std::move(lhs.instructions) };
   }
+
 }
 
 namespace kn::parser::emit {
@@ -74,30 +84,30 @@ namespace kn::parser::emit {
   // arity 0
 
 
-  Emitted true_([[maybe_unused]] ASTFrame ast) {
+  Emitted true_([[maybe_unused]] ASTFrame ast, ParseInfo&) {
     assert(ast.arity == 0);
     return { env::get().get_literal(true) };
   }
 
-  Emitted false_([[maybe_unused]] ASTFrame ast) {
+  Emitted false_([[maybe_unused]] ASTFrame ast, ParseInfo&) {
     assert(ast.arity == 0);
     return { env::get().get_literal(false) };
   }
 
-  Emitted null([[maybe_unused]] ASTFrame ast) {
+  Emitted null([[maybe_unused]] ASTFrame ast, ParseInfo&) {
     assert(ast.arity == 0);
     return { env::get().get_literal(Null{}) };
   }
 
-  Emitted prompt([[maybe_unused]] ASTFrame ast) {
+  Emitted prompt([[maybe_unused]] ASTFrame ast, ParseInfo& info) {
     assert(ast.arity == 0);
-    auto result = new_temp();
+    auto result = info.new_temp();
     return { result, { Operation(OpCode::Prompt, result) } };
   }
 
-  Emitted random([[maybe_unused]] ASTFrame ast) {
+  Emitted random([[maybe_unused]] ASTFrame ast, ParseInfo& info) {
     assert(ast.arity == 0);
-    auto result = new_temp();
+    auto result = info.new_temp();
     return { result, { Operation(OpCode::Random, result) } };
   }
 
@@ -105,47 +115,52 @@ namespace kn::parser::emit {
   // arity 1
 
 
-  Emitted block(ASTFrame ast) {
+  Emitted block(ASTFrame ast, ParseInfo& info) {
     assert(ast.arity == 1);
     auto& x = ast.children[0];
 
-    // TODO: extract out block and remove the jump
+    auto entry_point = info.new_jump();
+    auto num_temps = Label::from_constant(info.pop_frame());
 
-    auto entry_point = new_label();
-    auto exit_point  = new_label();
+    // block structure:
+    //   blocksize
+    //   label
+    //   ...
+    //   return
 
     x.instructions.emplace_front(OpCode::Label, entry_point);
-    x.instructions.emplace_front(OpCode::Jump, exit_point);
-
     x.instructions.emplace_back(OpCode::Return, x.result);
-    x.instructions.emplace_back(OpCode::Label, exit_point);
 
-    return { entry_point, std::move(x.instructions) };
+    x.instructions.emplace_front(OpCode::BlockData, num_temps);
+
+    info.blocks.emplace_back(std::move(x.instructions));
+
+    return { entry_point, {} };
   }
 
-  Emitted eval(ASTFrame ast) {
-    return gen_onearg(std::move(ast), OpCode::Eval); }
-  Emitted call(ASTFrame ast) {
-    return gen_onearg(std::move(ast), OpCode::Call); }
-  Emitted shell(ASTFrame ast) {
-    return gen_onearg(std::move(ast), OpCode::Shell); }
-  Emitted negate(ASTFrame ast) {
-    return gen_onearg(std::move(ast), OpCode::Negate); }
-  Emitted length(ASTFrame ast) {
-    return gen_onearg(std::move(ast), OpCode::Length); }
+  Emitted eval(ASTFrame ast, ParseInfo& info) {
+    return gen_onearg(std::move(ast), info, OpCode::Eval); }
+  Emitted call(ASTFrame ast, ParseInfo& info) {
+    return gen_onearg(std::move(ast), info, OpCode::Call); }
+  Emitted shell(ASTFrame ast, ParseInfo& info) {
+    return gen_onearg(std::move(ast), info, OpCode::Shell); }
+  Emitted negate(ASTFrame ast, ParseInfo& info) {
+    return gen_onearg(std::move(ast), info, OpCode::Negate); }
+  Emitted length(ASTFrame ast, ParseInfo& info) {
+    return gen_onearg(std::move(ast), info, OpCode::Length); }
 
-  Emitted output(ASTFrame ast) {
+  Emitted output(ASTFrame ast, ParseInfo&) {
     return gen_onearg_noreturn(std::move(ast), OpCode::Output); }
-  Emitted dump(ASTFrame ast) {
+  Emitted dump(ASTFrame ast, ParseInfo&) {
     return gen_onearg_noreturn(std::move(ast), OpCode::Dump); }
-  Emitted quit(ASTFrame ast) {
+  Emitted quit(ASTFrame ast, ParseInfo&) {
     return gen_onearg_noreturn(std::move(ast), OpCode::Quit); }
 
 
   // arity 2
 
 
-  Emitted assign(ASTFrame ast) {
+  Emitted assign(ASTFrame ast, ParseInfo&) {
     assert(ast.arity == 2);
 
     // must be an identifier, always no instructions
@@ -160,7 +175,7 @@ namespace kn::parser::emit {
     return { var, std::move(x.instructions) };
   }
 
-  Emitted sequence(ASTFrame ast) {
+  Emitted sequence(ASTFrame ast, ParseInfo&) {
     assert(ast.arity == 2);
     auto& lhs = ast.children[0];
     auto& rhs = ast.children[1];
@@ -171,13 +186,13 @@ namespace kn::parser::emit {
     return { rhs.result, std::move(lhs.instructions) };
   }
 
-  Emitted while_(ASTFrame ast) {
+  Emitted while_(ASTFrame ast, ParseInfo& info) {
     assert(ast.arity == 2);
     auto& cond = ast.children[0];
     auto& loop = ast.children[1];
 
-    auto start = new_label();
-    auto finish = new_label();
+    auto start = info.new_jump();
+    auto finish = info.new_jump();
 
     cond.instructions.emplace_front(OpCode::Label, start);
     cond.instructions.emplace_back(OpCode::JumpIfNot, finish, cond.result);
@@ -189,43 +204,43 @@ namespace kn::parser::emit {
     return { env::get().get_literal(Null{}), std::move(cond.instructions) };
   }
 
-  Emitted plus(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Plus); }
-  Emitted minus(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Minus); }
-  Emitted multiplies(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Multiplies); }
-  Emitted divides(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Divides); }
-  Emitted modulus(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Modulus); }
-  Emitted exponent(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Exponent); }
-  Emitted less(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Less); }
-  Emitted greater(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Greater); }
-  Emitted equals(ASTFrame ast) {
-    return gen_twoarg(std::move(ast), OpCode::Equals); }
+  Emitted plus(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Plus); }
+  Emitted minus(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Minus); }
+  Emitted multiplies(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Multiplies); }
+  Emitted divides(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Divides); }
+  Emitted modulus(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Modulus); }
+  Emitted exponent(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Exponent); }
+  Emitted less(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Less); }
+  Emitted greater(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Greater); }
+  Emitted equals(ASTFrame ast, ParseInfo& info) {
+    return gen_twoarg(std::move(ast), info, OpCode::Equals); }
 
-  Emitted disjunct(ASTFrame ast) {
-    return shortcircuit_logic(std::move(ast), OpCode::JumpIf); }
-  Emitted conjunct(ASTFrame ast) {
-    return shortcircuit_logic(std::move(ast), OpCode::JumpIfNot); }
+  Emitted disjunct(ASTFrame ast, ParseInfo& info) {
+    return shortcircuit_logic(std::move(ast), info, OpCode::JumpIf); }
+  Emitted conjunct(ASTFrame ast, ParseInfo& info) {
+    return shortcircuit_logic(std::move(ast), info, OpCode::JumpIfNot); }
 
 
   // arity 3
 
 
-  Emitted ifelse(ASTFrame ast) {
+  Emitted ifelse(ASTFrame ast, ParseInfo& info) {
     assert(ast.arity == 3);
     auto& cond = ast.children[0];
     auto& yes = ast.children[1];
     auto& no = ast.children[2];
 
-    auto no_label = new_label();
-    auto end_label = new_label();
-    auto result = new_temp();
+    auto no_label = info.new_jump();
+    auto end_label = info.new_jump();
+    auto result = info.new_temp();
 
     cond.instructions.emplace_back(OpCode::JumpIfNot, no_label, cond.result);
 
@@ -248,13 +263,15 @@ namespace kn::parser::emit {
     return { result, std::move(cond.instructions) };
   }
 
-  Emitted get(ASTFrame ast) {
+  Emitted get(ASTFrame ast, ParseInfo& info) {
     assert(ast.arity == 3);
-    auto& str = ast.children[0];
-    auto& pos = ast.children[1];
+
+    // handle mutable result variables and instruction reordering
+    auto& str = cache_expr(ast.children[0], info);
+    auto& pos = cache_expr(ast.children[1], info);
     auto& len = ast.children[2];
 
-    auto result = new_temp();
+    auto result = info.new_temp();
 
     str.instructions.insert(
       str.instructions.end(),
@@ -272,14 +289,16 @@ namespace kn::parser::emit {
   // arity 4
 
 
-  Emitted substitute(ASTFrame ast) {
+  Emitted substitute(ASTFrame ast, ParseInfo& info) {
     assert(ast.arity == 4);
-    auto& str = ast.children[0];
-    auto& pos = ast.children[1];
-    auto& len = ast.children[2];
+
+    // handle mutable result variables and instruction reordering
+    auto& str = cache_expr(ast.children[0], info);
+    auto& pos = cache_expr(ast.children[1], info);
+    auto& len = cache_expr(ast.children[2], info);
     auto& replace = ast.children[3];
 
-    auto result = new_temp();
+    auto result = info.new_temp();
 
     str.instructions.insert(
       str.instructions.end(),

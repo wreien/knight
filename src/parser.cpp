@@ -15,7 +15,8 @@
 
 namespace {
 
-  using emit_fn = kn::parser::Emitted(*)(kn::parser::ASTFrame);
+  using emit_fn = kn::parser::Emitted(*)(
+    kn::parser::ASTFrame, kn::parser::ParseInfo&);
   using emitter_map = std::array<
     std::pair<int, emit_fn>,
     std::numeric_limits<unsigned char>::max()>;
@@ -70,6 +71,8 @@ namespace kn::parser {
     if (tokens.empty())
       return {};
 
+    ParseInfo info;
+
     // initialize the stack with a no-op
     std::vector<ASTFrame> stack;
     stack.push_back({ 0, {}, 1, 0 });
@@ -100,9 +103,11 @@ namespace kn::parser {
         auto f_id = static_cast<std::size_t>(x->id);
         if (auto [arity, fn] = emitters[f_id]; fn) {
           if (arity == 0) {
-            top().add_child(fn({ 0, {}, 0, 0 }));
+            top().add_child(fn({ 0, {}, 0, 0 }, info));
           } else {
             stack.push_back({ f_id, {}, arity, 0 });
+            // special case for blocks to track temporary numbers
+            if (f_id == 'B') info.push_frame();
           }
         } else {
           throw kn::Error(it->range(), "error: unknown function");
@@ -116,13 +121,23 @@ namespace kn::parser {
       while (top().is_completed()) {
         if (stack.size() == 1) {
           // hit bottom of stack, we're done
-          if (++it != tokens.end())
+          if (++it != tokens.end()) {
             throw kn::Error(it->pos(), "error: unparsed tokens");
-          else
-            return top().children[0];
+          } else {
+            auto res = std::move(top().children[0]);
+            res.instructions.emplace_back(eval::OpCode::Return, res.result);
+            // add on the extra functions
+            for (auto&& block : info.blocks)
+              res.instructions.insert(
+                res.instructions.end(), block.begin(), block.end());
+            // prepend the number of temporaries we need
+            res.instructions.emplace_front(
+              eval::OpCode::BlockData, eval::Label::from_constant(info.pop_frame()));
+            return res;
+          }
         } else {
           // pop the stack off, run the function, add to previous layer
-          auto expr = emitters[top().func].second(std::move(top()));
+          auto expr = emitters[top().func].second(std::move(top()), info);
           stack.pop_back();
           top().add_child(std::move(expr));
         }
