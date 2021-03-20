@@ -9,6 +9,7 @@
 
 #ifndef NDEBUG
 #include "debug.hpp"
+#include <cstring>
 #include <iostream>
 #include <iomanip>
 #include <string>
@@ -236,6 +237,14 @@ namespace kn::eval {
         std::istringstream iss(inp);
         iss >> inp >> breakpoint;
         std::cout << "set breakpoint.\n";
+      } else if (inp[0] == 'r') {
+        for (auto&& cp : program) {
+          std::size_t x = 0;
+          assert(sizeof x == sizeof cp);
+          std::memcpy(&x, &cp, sizeof cp);
+          std::cout << std::hex << x << ' ';
+        }
+        std::cout << '\n';
       } else if (inp[0] == 'q') {
         break;
       }

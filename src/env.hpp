@@ -46,19 +46,23 @@ namespace kn::eval {
     std::unordered_map<String, std::size_t> stringlit_map;
     std::vector<Value> literals;
 
+    std::vector<std::optional<Value>> temporaries;
+
     struct StackFrame {
       StackFrame(std::size_t retaddr, Label result, std::size_t num_temps)
-        : retaddr(retaddr), result(result), temps(num_temps)
+        : retaddr(retaddr), result(result), num_temps(num_temps)
       {}
 
       std::size_t retaddr;
       Label result;
-      std::vector<std::optional<Value>> temps;
+      std::size_t num_temps;
     };
     std::vector<StackFrame> stack;
 
-    auto& temps() { return stack.back().temps; }
-    const auto& temps() const { return stack.back().temps; }
+    auto temps() {
+      return temporaries.data() + temporaries.size() - stack.back().num_temps; }
+    auto temps() const {
+      return temporaries.data() + temporaries.size() - stack.back().num_temps; }
   };
 
 }

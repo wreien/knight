@@ -6,6 +6,7 @@
 #include <functional>
 #include <iostream>
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 #include "env.hpp"
@@ -72,6 +73,8 @@ namespace {
     }
     return offset + 4;
   }
+
+  std::unordered_map<std::string, std::size_t> evals;
 
 }
 
@@ -308,12 +311,19 @@ namespace kn::funcs {
     std::exit(get_value(bytecode[offset + 1]).to_number());
   }
 
-  // TODO: optimise to perhaps cache identical evaluations?
   std::size_t eval(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Eval);
 
     // parse input and generate parsetree
     auto input = get_value(bytecode[offset + 2]).to_string();
+    if (auto it = evals.find(input); it != evals.end()) {
+      Environment::get().push_frame(
+        offset + 3,
+        bytecode[offset + 1].label,
+        bytecode[it->second - 1].label.id());
+      return it->second;
+    }
+
     auto tokens = kn::lexer::tokenise(input);
     auto program = kn::parser::parse(tokens);
 
@@ -329,6 +339,9 @@ namespace kn::funcs {
 
     // add the bytecode to the current execution set
     bytecode.insert(bytecode.end(), new_bytecode.begin(), new_bytecode.end());
+
+    // cache the string so we don't need to parse this one again
+    evals.emplace(std::move(input), new_offset);
 
     // return the start of the newly evaluated bytecode
     return new_offset;

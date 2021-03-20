@@ -32,12 +32,16 @@ namespace kn::eval {
 
   class Label {
   public:
-    Label()
-      : m_cat(LabelCat::Unused), m_id(0)
-    {}
-
     Label(LabelCat cat, std::size_t id)
-      : m_cat(cat), m_id(id)
+      : m_data(static_cast<std::size_t>(cat) | (id << shift))
+    {
+      // we have a limit on how large the id can be
+      // luckily it's pretty large :)
+      assert(id <= (~cat_mask >> shift));
+    }
+
+    Label()
+      : Label(LabelCat::Unused, 0)
     {}
 
     static Label from_constant(int n) {
@@ -50,17 +54,17 @@ namespace kn::eval {
       return Label(LabelCat::Constant, n);
     }
 
-    LabelCat cat() const noexcept { 
-      return m_cat; 
+    LabelCat cat() const noexcept {
+      return static_cast<LabelCat>(m_data & cat_mask);
     }
 
-    std::size_t id() const noexcept { 
-      return m_id; 
+    std::size_t id() const noexcept {
+      return m_data >> shift;
     }
 
     // can the value change
-    bool is_mutable() const noexcept { 
-      return cat() != LabelCat::Variable; 
+    bool is_mutable() const noexcept {
+      return cat() != LabelCat::Variable;
     }
 
     // do we need to dereference the label to get a result
@@ -71,17 +75,17 @@ namespace kn::eval {
     }
 
     friend bool operator==(Label a, Label b) noexcept {
-      return a.m_cat == b.m_cat and a.m_id == b.m_id;
+      return a.m_data == b.m_data;
     }
 
   private:
-    // TODO: bitpack?
-    LabelCat m_cat;
-    std::size_t m_id;
+    static constexpr std::size_t cat_mask = 0b111;
+    static constexpr std::size_t shift = 3;
+    std::size_t m_data;
   };
 
   enum class OpCode {
-    NoOp,
+    NoOp = 0,
 
     // control flow
     Label,

@@ -13,6 +13,7 @@ namespace kn::eval {
     , names()
     , stringlit_map()
     , literals{ { Null{} }, { true }, { false } }
+    , temporaries()
     , stack()
   {}
 
@@ -21,12 +22,16 @@ namespace kn::eval {
     return env;
   }
 
-  void Environment::push_frame(std::size_t retaddr, Label result, std::size_t num_temps) {
+  void Environment::push_frame(
+    std::size_t retaddr, Label result, std::size_t num_temps)
+  {
     stack.emplace_back(retaddr, result, num_temps);
+    temporaries.resize(temporaries.size() + num_temps);
   }
 
   std::pair<std::size_t, Label> Environment::pop_frame() {
     auto res = std::pair{ stack.back().retaddr, stack.back().result };
+    temporaries.resize(temporaries.size() - stack.back().num_temps);
     stack.pop_back();
     return res;
   }

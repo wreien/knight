@@ -1,0 +1,79 @@
+; = x 10 : + x (= 20 x)
+
+---
+
+Currently:
+
+  =   [v:3] 10
+  =   [v:3] 20
+  +   [v:4] [v:3] [v:3]
+
+which results in 40. This is incorrect, as the order of evaluation is strict.
+
+Instead:
+
+  =   [v:3] 10
+  =$  [t:0] [v:3]
+  =   [v:3] 20
+  +   [v:4] [t:0] [v:3]
+
+Potential optimisation: use registers instead of "reusable" variables.
+
+OneArgs will be fine, no eval order issues.
+Investigate TwoArgs and higher.
+
+  - sequence: we don't need to do anything special
+  - while: we already must handle the condition separately
+
+---
+
+Let us consider
+
+; = x 10 : + (= 20 x) x
+
+We should generate:
+
+  =   [v:3] 10
+  =   [v:3] 20
+  =   [t:0] [v:3]
+  +   [v:4] [t:0] [v:3]
+
+however the fresh [t:0] flag is unnecessary.
+We should only care if it's not a temporary.
+
+---
+
+How about recursion?
+
+  ; = f BLOCK
+    : IF (? n 0)
+      : 5
+    ; = tmp n
+    ; = n 0
+    : + (+ tmp tmp) (CALL f)       <-- here
+  ; = n 10
+  : D CALL f
+
+This should result in:
+
+  +   [t:0] tmp tmp
+  cl  [t:1] f
+  +   [t:2] [t:0] [t:1]
+
+... or should it? In the recursive call to `f`,
+the result value [t:0] is overwritten again,
+and we have the same issue.
+
+The solution is that temporaries should be /truly/
+write-once: each `BLOCK` (or `EVAL`, for that matter)
+should result in a new set of temporaries.
+Variables have global scope which is OK, however.
+
+When preparing codegen for a `BLOCK`, at the parse step
+acknowledge that we're creating a new function.
+Get the environment to give us new temporaries.
+When encoding a full block we get the total number of temporaries
+and store it in some label at the front of the function,
+to save on allocations.
+(Maybe only do so for more than e.g. a base of 10 temps or something;
+should experiment with performance.)
