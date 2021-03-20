@@ -4,11 +4,10 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <variant>
 
 namespace kn::eval {
 
-  struct Value;
+  class Value;
 
   // basic types
   struct Null {
@@ -70,16 +69,33 @@ namespace kn::eval {
     std::size_t address;
   };
 
-  struct Value : std::variant<Null, Boolean, Number, String, Block> {
-    using variant::variant;
+  class Value {
+    enum class Type {
+      Null, Boolean, Number, String, Block
+    };
 
-    Value(Number::type x) : variant(Number(x)) {}
-    Value(bool x) : variant(Boolean(x)) {}
+  public:
+    Value() : type(Type::Null) {}
+    Value(Null) : type(Type::Null) {}
+    Value(bool b) : type(Type::Boolean), boolean(b) {}
+    Value(Boolean b) : Value(b.value) {}
+    Value(Number::type x) : type(Type::Number), number(x) {}
+    Value(Number x) : Value(x.value) {}
+    Value(String s) : type(Type::String), string(std::move(s)) {}
+    Value(Block b) : type(Type::Block), block(b.address) {}
 
-    bool is_null() const noexcept { return std::holds_alternative<Null>(*this); }
-    bool is_bool() const noexcept { return std::holds_alternative<Boolean>(*this); }
-    bool is_number() const noexcept { return std::holds_alternative<Number>(*this); }
-    bool is_string() const noexcept { return std::holds_alternative<String>(*this); }
+    Value(const Value& other);
+    Value(Value&& other) noexcept;
+    Value& operator=(const Value& other);
+    Value& operator=(Value&& other) noexcept;
+    ~Value();
+
+    Value& swap(Value& other) noexcept;
+
+    bool is_null() const noexcept { return type == Type::Null; }
+    bool is_bool() const noexcept { return type == Type::Boolean; }
+    bool is_number() const noexcept { return type == Type::Number; }
+    bool is_string() const noexcept { return type == Type::String; }
 
     Boolean to_bool() const;
     Number to_number() const;
@@ -87,21 +103,48 @@ namespace kn::eval {
     String to_string() &&;
     Block to_block() const;
 
+    friend bool operator==(const Value& lhs, const Value& rhs) noexcept {
+      if (lhs.type != rhs.type)
+        return false;
+      switch (lhs.type) {
+      case Type::Null:
+        return true;
+      case Type::Boolean:
+        return lhs.boolean == rhs.boolean;
+      case Type::Number:
+        return lhs.number == rhs.number;
+      case Type::Block:
+        return lhs.block == rhs.block;
+      case Type::String:
+        return lhs.string == rhs.string;
+      }
+      return false;
+    }
+
     friend std::ostream& operator<<(std::ostream& os, const Value& value) {
-      if (std::holds_alternative<Null>(value))
-        os << "Null()";
-      else if (auto x = std::get_if<Boolean>(&value))
-        os << "Boolean(" << (*x ? "true" : "false") << ")";
-      else if (auto x = std::get_if<Number>(&value))
-        os << "Number(" << *x << ")";
-      else if (auto x = std::get_if<String>(&value))
-        os << "String(" << *x << ")";
-      else if (auto x = std::get_if<Block>(&value))
-        os << "Function(" << x->address << ")";
-      else
-        os << "???";
+      switch (value.type) {
+      case Type::Null:
+        return os << "Null()";
+      case Type::Boolean:
+        return os << "Boolean(" << (value.boolean ? "true" : "false") << ")";
+      case Type::Number:
+        return os << "Number(" << value.number << ")";
+      case Type::String:
+        return os << "String(" << value.string << ")";
+      case Type::Block:
+        return os << "Function(" << value.block << ")";
+      }
       return os;
     }
+
+  private:
+    Type type;
+    union {
+      bool boolean;
+      Number::type number;
+      String string;
+      std::size_t block;
+    };
   };
 
 }

@@ -53,37 +53,99 @@ namespace kn::eval {
     return String(std::move(str));
   }
 
+  Value::Value(const Value& other)
+    : type(other.type)
+  {
+    switch (type) {
+    case Type::Boolean: boolean = other.boolean; break;
+    case Type::Number: number = other.number; break;
+    case Type::Block: block = other.block; break;
+    case Type::Null: break;
+    case Type::String: new (&string) String(other.string);
+    }
+  }
+
+  Value::Value(Value&& other) noexcept
+    : type(other.type)
+  {
+    switch (type) {
+    case Type::Boolean: boolean = other.boolean; break;
+    case Type::Number: number = other.number; break;
+    case Type::Block: block = other.block; break;
+    case Type::Null: break;
+    case Type::String: new (&string) String(std::move(other.string));
+    }
+  }
+
+  Value& Value::operator=(const Value& other) {
+    if (this == &other)
+      return *this;
+    if (type == Type::String)
+      string.~String();
+    type = other.type;
+    switch (type) {
+    case Type::Boolean: boolean = other.boolean; break;
+    case Type::Number: number = other.number; break;
+    case Type::Block: block = other.block; break;
+    case Type::Null: break;
+    case Type::String: new (&string) String(other.string);
+    }
+    return *this;
+  }
+
+  Value& Value::operator=(Value&& other) noexcept {
+    if (this == &other)
+      return *this;
+    if (type == Type::String)
+      string.~String();
+    type = other.type;  // don't exchange
+    switch (type) {
+    case Type::Boolean: boolean = other.boolean; break;
+    case Type::Number: number = other.number; break;
+    case Type::Block: block = other.block; break;
+    case Type::Null: break;
+    case Type::String: new (&string) String(std::move(other.string));
+    }
+    return *this;
+  }
+
+  Value::~Value() {
+    if (type == Type::String)
+      string.~String();
+  }
+
   Boolean Value::to_bool() const {
-    if (auto x = std::get_if<Boolean>(this)) return *x;
-    if (auto x = std::get_if<Number>(this)) return *x != 0;
-    if (auto x = std::get_if<String>(this)) return not x->as_str().empty();
+    if (type == Type::Boolean) return boolean;
+    if (type == Type::Number) return number != 0;
+    if (type == Type::String) return not string.as_str().empty();
     return false;  // null
   }
 
   Number Value::to_number() const {
-    if (auto x = std::get_if<Boolean>(this)) return *x ? 1 : 0;
-    if (auto x = std::get_if<Number>(this)) return *x;
-    if (auto x = std::get_if<String>(this)) return string_to_number(*x);
+    if (type == Type::Boolean) return boolean ? 1 : 0;
+    if (type == Type::Number) return number;
+    if (type == Type::String) return string_to_number(string);
     return 0;  // null
   }
 
   String Value::to_string() const& {
-    if (auto x = std::get_if<Boolean>(this)) return *x ? true_str : false_str;
-    if (auto x = std::get_if<Number>(this)) return String(std::to_string(*x));
-    if (auto x = std::get_if<String>(this)) return *x;
+    if (type == Type::Boolean) return boolean ? true_str : false_str;
+    if (type == Type::Number) return String(std::to_string(number));
+    if (type == Type::String) return string;
     return null_str;  // null
   }
 
   // optimise common case of copying from expiring value
   String Value::to_string() && {
-    if (auto x = std::get_if<Boolean>(this)) return *x ? true_str : false_str;
-    if (auto x = std::get_if<Number>(this)) return String(std::to_string(*x));
-    if (auto x = std::get_if<String>(this)) return std::move(*x);
+    if (type == Type::Boolean) return boolean ? true_str : false_str;
+    if (type == Type::Number) return String(std::to_string(number));
+    if (type == Type::String) return std::move(string);
     return null_str;  // null
   }
 
   Block Value::to_block() const {
-    if (auto x = std::get_if<Block>(this)) return *x;
-    throw kn::Error("error: not a block");
+    if (type != Type::Block)
+      throw kn::Error("error: not a block");
+    return Block{ block };
   }
 }

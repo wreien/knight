@@ -19,12 +19,13 @@ using namespace kn::eval;
 
 namespace {
 
-  Value get_value(CodePoint cp) {
+  const Value& get_value(CodePoint cp) {
+    static Value to_return;
     switch (cp.label.cat()) {
     case LabelCat::Constant:
-      return Number(cp.label.id());
+      return (to_return = Number(cp.label.id()));
     case LabelCat::JumpTarget:
-      return Block{ cp.label.id() };
+      return (to_return = Block{ cp.label.id() });
     case LabelCat::Literal:
     case LabelCat::Temporary:
     case LabelCat::Variable:
