@@ -38,13 +38,17 @@ namespace {
 #endif
   }
 
-  void set_result(ByteCode& bytecode, std::size_t offset, Value v) {
+  void set_result(ByteCode& bytecode, std::size_t offset, const Value& v) {
+    Environment::get().assign(bytecode[offset + 1].label, std::move(v));
+  }
+
+  void set_result(ByteCode& bytecode, std::size_t offset, Value&& v) {
     Environment::get().assign(bytecode[offset + 1].label, std::move(v));
   }
 
   template <typename F>
   std::size_t binary_math_op(ByteCode& bytecode, std::size_t offset, F f) {
-    auto lhs = get_value(bytecode[offset + 2]);
+    auto& lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
@@ -56,7 +60,7 @@ namespace {
 
   template <typename F>
   std::size_t binary_compare_op(ByteCode& bytecode, std::size_t offset, F f) {
-    auto lhs = get_value(bytecode[offset + 2]);
+    auto& lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
@@ -150,14 +154,14 @@ namespace kn::funcs {
   std::size_t plus(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Plus);
 
-    auto lhs = get_value(bytecode[offset + 2]);
+    auto& lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
       set_result(bytecode, offset, x + y);
     } else if (lhs.is_string()) {
-      auto x = lhs.to_string();
-      auto y = get_value(bytecode[offset + 3]).to_string();
+      const auto& x = lhs.to_string();
+      const auto& y = get_value(bytecode[offset + 3]).to_string();
       set_result(bytecode, offset, x + y);
     } else {
       assert(false);
@@ -169,13 +173,13 @@ namespace kn::funcs {
   std::size_t multiplies(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Multiplies);
 
-    auto lhs = get_value(bytecode[offset + 2]);
+    auto& lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
       set_result(bytecode, offset, x * y);
     } else if (lhs.is_string()) {
-      auto x = lhs.to_string();
+      const auto& x = lhs.to_string();
       auto y = get_value(bytecode[offset + 3]).to_number();
       set_result(bytecode, offset, x * y);
     } else {
@@ -227,8 +231,8 @@ namespace kn::funcs {
 
   std::size_t equals(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Equals);
-    auto lhs = get_value(bytecode[offset + 2]);
-    auto rhs = get_value(bytecode[offset + 3]);
+    auto& lhs = get_value(bytecode[offset + 2]);
+    auto& rhs = get_value(bytecode[offset + 3]);
     set_result(bytecode, offset, lhs == rhs);
     return offset + 4;
   }
@@ -236,14 +240,14 @@ namespace kn::funcs {
   // string
   std::size_t length(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Length);
-    auto str = get_value(bytecode[offset + 2]).to_string();
+    const auto& str = get_value(bytecode[offset + 2]).to_string();
     set_result(bytecode, offset, static_cast<Number>(str.size()));
     return offset + 3;
   }
 
   std::size_t get(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Get);
-    auto str = get_value(bytecode[offset + 2]).to_string();
+    const auto& str = get_value(bytecode[offset + 2]).to_string();
     auto pos = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
     auto len = static_cast<std::size_t>(get_value(bytecode[offset + 4]).to_number());
     set_result(bytecode, offset, str.substr(pos, len));
@@ -252,10 +256,10 @@ namespace kn::funcs {
 
   std::size_t substitute(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Substitute);
-    auto str = get_value(bytecode[offset + 2]).to_string();
+    const auto& str = get_value(bytecode[offset + 2]).to_string();
     auto pos = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
     auto len = static_cast<std::size_t>(get_value(bytecode[offset + 4]).to_number());
-    auto replace = get_value(bytecode[offset + 5]).to_string();
+    const auto& replace = get_value(bytecode[offset + 5]).to_string();
     set_result(bytecode, offset, str.replace(pos, len, replace));
     return offset + 6;
   }
@@ -278,7 +282,7 @@ namespace kn::funcs {
 
   std::size_t output(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Output);
-    auto str = get_value(bytecode[offset + 1]).to_string();
+    const auto& str = get_value(bytecode[offset + 1]).to_string();
     str.output(std::cout);
     return offset + 2;
   }
