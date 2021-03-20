@@ -97,7 +97,7 @@ namespace kn::parser {
         top().add_child(eval::Label::from_constant(x->data));
       }
       else if (auto x = it->as_ident()) {
-        top().add_child(env.get_variable(eval::String(x->name)));
+        top().add_child(env.get_variable(std::string(x->name)));
       }
       else if (auto x = it->as_function()) {
         auto f_id = static_cast<std::size_t>(x->id);

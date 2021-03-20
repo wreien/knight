@@ -44,9 +44,17 @@ namespace kn::eval {
     }
     return { LabelCat::Variable, it->second };
   }
+  Label Environment::get_variable(std::string&& name) {
+    auto [it, inserted] = id_map.try_emplace(name, values.size());
+    if (inserted) {
+      names.push_back(std::move(name));
+      values.emplace_back();
+    }
+    return { LabelCat::Variable, it->second };
+  }
 
   Label Environment::get_literal(String s) {
-    auto [it, inserted] = stringlit_map.try_emplace(s, literals.size());
+    auto [it, inserted] = stringlit_map.try_emplace(s.as_str(), literals.size());
     if (inserted) {
       literals.emplace_back(std::move(s));
     }

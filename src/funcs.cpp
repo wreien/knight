@@ -61,8 +61,8 @@ namespace {
       auto y = get_value(bytecode[offset + 3]).to_number();
       set_result(bytecode, offset, f(x, y));
     } else if (lhs.is_string()) {
-      auto x = lhs.to_string();
-      auto y = get_value(bytecode[offset + 3]).to_string();
+      const auto& x = lhs.to_string().as_str();
+      const auto& y = get_value(bytecode[offset + 3]).to_string().as_str();
       set_result(bytecode, offset, f(x, y));
     } else if (lhs.is_bool()) {
       auto x = lhs.to_bool();
@@ -175,11 +175,8 @@ namespace kn::funcs {
       set_result(bytecode, offset, x * y);
     } else if (lhs.is_string()) {
       auto x = lhs.to_string();
-      auto y = static_cast<std::size_t>(get_value(bytecode[offset + 3]).to_number());
-      auto s = std::string{};
-      s.reserve(x.size() * y);
-      while (y--) s += x;
-      set_result(bytecode, offset, std::move(s));
+      auto y = get_value(bytecode[offset + 3]).to_number();
+      set_result(bytecode, offset, x * y);
     } else {
       assert(false);
     }
@@ -205,7 +202,7 @@ namespace kn::funcs {
   std::size_t exponent(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Exponent);
     return binary_math_op(bytecode, offset, [](Number lhs, Number rhs) {
-      return static_cast<Number>(std::pow(lhs, rhs)); });
+      return static_cast<Number>(std::pow(lhs.value, rhs.value)); });
   }
 
   // logical
@@ -239,7 +236,7 @@ namespace kn::funcs {
   std::size_t length(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Length);
     auto str = get_value(bytecode[offset + 2]).to_string();
-    set_result(bytecode, offset, static_cast<Number>(str.length()));
+    set_result(bytecode, offset, static_cast<Number>(str.size()));
     return offset + 3;
   }
 
@@ -274,19 +271,14 @@ namespace kn::funcs {
     assert(bytecode[offset].op == OpCode::Prompt);
     auto line = std::string{};
     std::getline(std::cin, line);
-    set_result(bytecode, offset, std::move(line));
+    set_result(bytecode, offset, String(std::move(line)));
     return offset + 2;
   }
 
   std::size_t output(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Output);
     auto str = get_value(bytecode[offset + 1]).to_string();
-    if (not str.empty() and str.back() == '\\') {
-      str.pop_back();
-      std::cout << str << std::flush;
-    } else {
-      std::cout << str << '\n' << std::flush;
-    }
+    str.output(std::cout);
     return offset + 2;
   }
 
@@ -294,15 +286,15 @@ namespace kn::funcs {
     assert(bytecode[offset].op == OpCode::Random);
     thread_local auto generator = std::mt19937(std::random_device{}());
     thread_local auto dist = std::uniform_int_distribution(
-      Number{}, std::numeric_limits<Number>::max());
+      Number::type{}, std::numeric_limits<Number::type>::max());
     set_result(bytecode, offset, dist(generator));
     return offset + 2;
   }
 
   std::size_t shell(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Shell);
-    set_result(bytecode, offset,
-               open_shell(get_value(bytecode[offset + 2]).to_string()));
+    const auto& str = get_value(bytecode[offset + 2]).to_string().as_str();
+    set_result(bytecode, offset, String(open_shell(str)));
     return offset + 3;
   }
 
@@ -311,11 +303,14 @@ namespace kn::funcs {
     std::exit(get_value(bytecode[offset + 1]).to_number());
   }
 
+  // TODO: rewrite eval?
   std::size_t eval(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Eval);
+    auto next_statement = offset + 3;
+    auto result = bytecode[offset + 1].label;
 
     // parse input and generate parsetree
-    auto input = get_value(bytecode[offset + 2]).to_string();
+    const auto& input = get_value(bytecode[offset + 2]).to_string().as_str();
     if (auto it = evals.find(input); it != evals.end()) {
       Environment::get().push_frame(
         offset + 3,
@@ -328,14 +323,13 @@ namespace kn::funcs {
     auto program = kn::parser::parse(tokens);
 
     // store offsets and prepare new bytecode
-    auto next_statement = offset + 3;
     auto new_offset = bytecode.size() + 2;  // see `eval::run`
     auto new_bytecode = kn::eval::prepare(program, bytecode.size());
 
     // get block data and construct new stack frame
     assert(new_bytecode[0].op == OpCode::BlockData);
     Environment::get().push_frame(
-      next_statement, bytecode[offset + 1].label, new_bytecode[1].label.id());
+      next_statement, result, new_bytecode[1].label.id());
 
     // add the bytecode to the current execution set
     bytecode.insert(bytecode.end(), new_bytecode.begin(), new_bytecode.end());

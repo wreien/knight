@@ -23,6 +23,7 @@ namespace kn::eval {
     std::pair<std::size_t, Label> pop_frame();
 
     Label get_variable(const std::string& name);
+    Label get_variable(std::string&& name);
 
     Label get_literal(String s);
     Label get_literal(Boolean b) const noexcept;
@@ -43,7 +44,7 @@ namespace kn::eval {
     std::vector<std::optional<Value>> values;
     std::vector<std::string> names;
 
-    std::unordered_map<String, std::size_t> stringlit_map;
+    std::unordered_map<std::string, std::size_t> stringlit_map;
     std::vector<Value> literals;
 
     std::vector<std::optional<Value>> temporaries;
