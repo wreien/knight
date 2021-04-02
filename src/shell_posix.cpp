@@ -7,7 +7,7 @@
 #include "funcs.hpp"
 #include "error.hpp"
 
-std::string kn::funcs::open_shell(std::string command) {
+std::string kn::funcs::open_shell(const std::string& command) {
   auto close = [](FILE* f) { pclose(f); };
   auto stream = std::unique_ptr<FILE, decltype(close)>(
     popen(command.c_str(), "r"), close);

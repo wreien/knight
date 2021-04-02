@@ -66,8 +66,8 @@ namespace {
       auto y = get_value(bytecode[offset + 3]).to_number();
       set_result(bytecode, offset, f(x, y));
     } else if (lhs.is_string()) {
-      const auto& x = lhs.to_string().as_str();
-      const auto& y = get_value(bytecode[offset + 3]).to_string().as_str();
+      const auto& x = lhs.to_string().as_str_view();
+      const auto& y = get_value(bytecode[offset + 3]).to_string().as_str_view();
       set_result(bytecode, offset, f(x, y));
     } else if (lhs.is_bool()) {
       auto x = lhs.to_bool();

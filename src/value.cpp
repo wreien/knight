@@ -2,33 +2,56 @@
 #include "error.hpp"
 #include "env.hpp"
 
+#include <memory>
 #include <charconv>
 
 namespace {
   kn::eval::Number string_to_number(const kn::eval::String& s) {
     // not in spec, but tests require "+34" to be parsed as 34
-    auto i = s.as_str().find_first_not_of("\t\n\r +");
+    auto sv = s.as_str_view();
+    auto i = sv.find_first_not_of("\t\n\r +");
 
     // explicitly do no error checking
     kn::eval::Number::type result = 0;
-    std::from_chars(s.value->data() + i, s.value->data() + s.size(), result);
+    std::from_chars(sv.data() + i, sv.data() + sv.size(), result);
     return result;
   }
 
   kn::eval::String true_str(std::string("true"));
   kn::eval::String false_str(std::string("false"));
   kn::eval::String null_str(std::string("null"));
+
+  constexpr auto value_offset = 2 * sizeof(std::size_t);
+  char* alloc_string(std::size_t size) {
+    auto p = static_cast<char*>(::operator new(value_offset + size));
+    new (p) std::size_t{ size };
+    new (p + sizeof(std::size_t)) std::size_t{ 1 };
+    return p;
+  }
 }
 
 namespace kn::eval {
 
+  String::String(std::string_view value)
+    : m_data(alloc_string(value.size()))
+  {
+    auto p = static_cast<char*>(m_data);
+    std::uninitialized_copy(value.begin(), value.end(), p + value_offset);
+  }
+
   String String::substr(std::size_t pos, std::size_t len) const {
-    return String(value->substr(pos, len));
+    return String(as_str_view().substr(pos, len));
   }
 
   String String::replace(std::size_t pos, std::size_t len, const String& other) const {
-    auto str = as_str();
-    return String(str.replace(pos, len, other.as_str()));
+    auto p = alloc_string(size() - len + other.size());
+    std::uninitialized_copy(
+      value(), value() + pos, p + value_offset);
+    std::uninitialized_copy(
+      other.value(), other.value() + other.size(), p + value_offset + pos);
+    std::uninitialized_copy(
+      value() + pos + len, value() + size(), p + value_offset + pos + other.size());
+    return String(p);
   }
 
   void String::output(std::ostream& os) const {
@@ -42,16 +65,28 @@ namespace kn::eval {
   }
 
   String operator+(const String& lhs, const String& rhs) {
-    return String(lhs.as_str() + rhs.as_str());
+    auto p = alloc_string(lhs.size() + rhs.size());
+    std::uninitialized_copy(
+      lhs.value(), lhs.value() + lhs.size(), p + value_offset);
+    std::uninitialized_copy(
+      rhs.value(), rhs.value() + rhs.size(), p + value_offset + lhs.size());
+    return String(p);
   }
 
   String operator*(const String& lhs, Number rhs) {
-    auto str = std::string{};
     auto num = static_cast<std::size_t>(rhs);
-    str.reserve(lhs.size() * num);
-    while (num--) str += lhs.as_str();
-    return String(std::move(str));
+    auto p = alloc_string(lhs.size() * num);
+
+    auto value = p + 2 * sizeof(std::size_t);
+    while (num--) {
+      std::uninitialized_copy(lhs.value(), lhs.value() + lhs.size(), value);
+      value += lhs.size();
+    }
+
+    return String(p);
   }
+
+
 
   Value::Value(const Value& other)
     : type(other.type)
@@ -117,7 +152,7 @@ namespace kn::eval {
   Boolean Value::to_bool() const {
     if (type == Type::Boolean) return boolean;
     if (type == Type::Number) return number != 0;
-    if (type == Type::String) return not string.as_str().empty();
+    if (type == Type::String) return string.size() != 0;
     return false;  // null
   }
 

@@ -53,10 +53,10 @@ namespace kn::eval {
     return { LabelCat::Variable, it->second };
   }
 
-  Label Environment::get_literal(String s) {
-    auto [it, inserted] = stringlit_map.try_emplace(s.as_str(), literals.size());
+  Label Environment::get_literal(std::string s) {
+    auto [it, inserted] = stringlit_map.try_emplace(s, literals.size());
     if (inserted) {
-      literals.emplace_back(std::move(s));
+      literals.emplace_back(String(std::move(s)));
     }
     return { LabelCat::Literal, it->second };
   }

@@ -25,7 +25,7 @@ namespace kn::eval {
     Label get_variable(const std::string& name);
     Label get_variable(std::string&& name);
 
-    Label get_literal(String s);
+    Label get_literal(std::string s);
     Label get_literal(Boolean b) const noexcept;
     Label get_literal(Null) const noexcept;
 

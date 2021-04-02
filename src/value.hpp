@@ -1,8 +1,9 @@
 #ifndef KNIGHT_VALUE_HPP_INCLUDED
 #define KNIGHT_VALUE_HPP_INCLUDED
 
-#include <memory>
+#include <new>
 #include <ostream>
+#include <utility>
 #include <string>
 
 namespace kn::eval {
@@ -31,22 +32,42 @@ namespace kn::eval {
     type value;
   };
 
-  struct String {
-    explicit String(std::string&& value)
-      : value(std::make_shared<std::string>(std::move(value)))
-    {}
-    explicit String(std::string_view value)
-      : value(std::make_shared<std::string>(value))
-    {}
+  // a ref-counted COW string
+  class String {
+  public:
+    explicit String(const std::string& value) : String(std::string_view(value)) {};
+    explicit String(std::string_view value);
 
-    explicit operator const std::string&() const noexcept { return *value; }
-    explicit operator std::string_view() const noexcept { return *value; }
+    ~String() { release(); }
 
-    const std::string& as_str() const noexcept { return *value; }
-    std::string_view as_str_view() const noexcept { return *value; }
+    String(const String& other) : m_data(other.m_data) { ++num_refs(); }
+    String(String&& other) noexcept : m_data(std::exchange(other.m_data, nullptr)) {}
+
+    String& operator=(const String& other) {
+      if (this != &other) {
+        release();
+        m_data = other.m_data;
+        ++num_refs();
+      }
+      return *this;
+    }
+    String& operator=(String&& other) noexcept {
+      m_data = std::exchange(other.m_data, nullptr);
+      return *this;
+    }
+
+    std::string as_str() const {
+      return { value(), size() };
+    }
+    std::string_view as_str_view() const noexcept {
+      return { value(), size() };
+    }
 
     // some functions that this is used for
-    auto size() const noexcept { return value->size(); }
+    std::size_t size() const noexcept {
+      return *std::launder(reinterpret_cast<std::size_t*>(m_data));
+    }
+
     String substr(std::size_t pos, std::size_t len) const;
     String replace(std::size_t pos, std::size_t len, const String& other) const;
     void output(std::ostream& os) const;
@@ -55,13 +76,31 @@ namespace kn::eval {
     friend String operator*(const String& lhs, Number rhs);
 
     friend bool operator==(const String& a, const String& b) noexcept {
-      return a.value == b.value or *a.value == *b.value;
+      return a.m_data == b.m_data or a.as_str_view() == b.as_str_view();
     }
     friend std::ostream& operator<<(std::ostream& os, const String& s) {
-      return os << *s.value;
+      return os << s.as_str_view();
     }
 
-    std::shared_ptr<const std::string> value;
+  private:
+    explicit String(void* data) : m_data(data) {}
+    void* m_data = nullptr;
+
+    std::size_t& num_refs() noexcept {
+      return *std::launder(reinterpret_cast<std::size_t*>(
+          static_cast<char*>(m_data) + sizeof(std::size_t)));
+    }
+
+    const char* value() const noexcept {
+      return static_cast<const char*>(m_data) + 2 * sizeof(std::size_t);
+    }
+
+    void release() noexcept {
+      if (not m_data)
+        return;
+      if (--num_refs() == 0)
+        ::operator delete(m_data);
+    }
   };
 
   struct Block {

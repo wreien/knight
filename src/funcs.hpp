@@ -7,7 +7,7 @@
 
 namespace kn::funcs {
 
-  std::string open_shell(std::string command);
+  std::string open_shell(const std::string& command);
 
   // control flow
   std::size_t no_op(kn::eval::ByteCode& bytecode, std::size_t offset);
