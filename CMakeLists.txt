@@ -2,12 +2,19 @@ cmake_minimum_required(VERSION 3.14)
 
 project(knight_cpp2 VERSION 0.1 LANGUAGES CXX)
 include(CheckIPOSupported)
+include(CheckCXXCompilerFlag)
+
+CHECK_CXX_COMPILER_FLAG("-march=native" COMPILER_SUPPORTS_MARCH_NATIVE)
+option(OPTIMISE_NATIVE "Release builds use -march=native, if available"
+    ${COMPILER_SUPPORTS_MARCH_NATIVE})
 
 add_executable(knight)
 set_target_properties(knight PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
 )
 
 target_sources(knight PRIVATE
@@ -31,15 +38,16 @@ target_sources(knight PRIVATE
     src/value.cpp
 )
 
-if (WIN32)
+if(WIN32)
     target_sources(knight PRIVATE src/shell_win32.cpp)
 else()
     target_sources(knight PRIVATE src/shell_posix.cpp)
 endif()
 
 check_ipo_supported(RESULT IS_IPO_SUPPORTED)
-set_target_properties(knight PROPERTIES
-    INTERPROCEDURAL_OPTIMIZATION $<AND:$<CONFIG:Release>,${IS_IPO_SUPPORTED}>)
+if(IS_IPO_SUPPORTED)
+    set_target_properties(knight PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE YES)
+endif()
 
 set(SANITISERS "$<$<CONFIG:Debug>:-fsanitize=undefined,address;-fno-omit-frame-pointer>")
 
@@ -48,3 +56,7 @@ target_compile_options(knight PRIVATE
     "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
 target_link_libraries(knight PRIVATE
     "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:${SANITISERS}>")
+
+if(OPTIMISE_NATIVE AND COMPILER_SUPPORTS_MARCH_NATIVE)
+    target_compile_options(knight PRIVATE "$<$<CONFIG:Release>:-march=native>")
+endif()
