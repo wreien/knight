@@ -77,19 +77,17 @@ namespace kn::eval {
 
   // prepare the instructions for execution:
   // remove labels, determine jump offsets, and flatten structure
-  ByteCode prepare(const parser::Emitted& program, std::size_t label_offset) {
-    const auto& instructions = program.instructions;
-
+  ByteCode prepare(const std::vector<Operation>& program, std::size_t label_offset) {
     // our new list
     // potentially overreserve, but we're not super worried about that generally
     // (the average instruction has one opcode and two labels)
     auto rewritten = std::vector<CodePoint>{};
-    rewritten.reserve(3 * instructions.size());
+    rewritten.reserve(3 * program.size());
 
     // map from local offset -> label ID
     auto local_offsets = std::vector<std::pair<std::size_t, std::size_t>>{};
 
-    for (const auto& op : instructions) switch (op.op) {
+    for (const auto& op : program) switch (op.op) {
       case OpCode::Label: {
         assert(op.labels[0].cat() == LabelCat::JumpTarget);
         [[maybe_unused]] auto [_, s] = labels.try_emplace(

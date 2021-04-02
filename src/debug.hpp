@@ -107,22 +107,23 @@ namespace kn::eval {
     return os;
   }
 
-}
+  inline std::ostream& operator<<(
+    std::ostream& os, const std::vector<std::deque<Operation>>& program)
+  {
+    for (auto&& block : program) {
+      for (auto&& op : block) {
+        if (op.op == kn::eval::OpCode::Label) {
+          os << op.labels[0] << " =>\n";
+          continue;
+        }
+        os << "   " << op.op;
 
-namespace kn::parser {
-
-  inline std::ostream& operator<<(std::ostream& os, const Emitted& program) {
-    for (auto&& op : program.instructions) {
-      if (op.op == kn::eval::OpCode::Label) {
-        os << op.labels[0] << " =>\n";
-        continue;
-      }
-      os << "   " << op.op;
-
-      for (std::size_t i = 0; i < kn::eval::max_labels; i++) {
-        if (op.labels[i].cat() == kn::eval::LabelCat::Unused)
-          break;
-        os << op.labels[i] << ' ';
+        for (std::size_t i = 0; i < kn::eval::max_labels; i++) {
+          if (op.labels[i].cat() == kn::eval::LabelCat::Unused)
+            break;
+          os << op.labels[i] << ' ';
+        }
+        os << "\n";
       }
       os << "\n";
     }

@@ -28,6 +28,8 @@ target_sources(knight PRIVATE
     src/eval.hpp
     src/funcs.cpp
     src/funcs.hpp
+    src/ir.cpp
+    src/ir.hpp
     src/lexer.cpp
     src/lexer.hpp
     src/main.cpp

@@ -15,6 +15,8 @@ namespace kn::parser {
 
   inline constexpr std::size_t max_arity = 4;
 
+  using Block = std::deque<eval::Operation>;
+
   struct Emitted {
     Emitted() = default;
     Emitted(eval::Label result) : result(result) {}
@@ -23,12 +25,12 @@ namespace kn::parser {
     {}
 
     eval::Label result = {};
-    std::deque<eval::Operation> instructions = {};
+    Block instructions = {};
   };
 
   // general parsing stuff
   struct ParseInfo {
-    std::vector<std::deque<eval::Operation>> blocks = {};
+    std::vector<Block> blocks = {};
     std::vector<std::size_t> temp_stack = { 0 };
     std::size_t jump_labels = 0;
 
@@ -70,7 +72,7 @@ namespace kn::parser {
     }
   };
 
-  Emitted parse(const std::vector<lexer::Token>& tokens);
+  std::vector<Block> parse(const std::vector<lexer::Token>& tokens);
 
 }
 

@@ -5,15 +5,9 @@
 #include <cstddef>
 #include <vector>
 
-namespace kn::parser {
-
-  struct Emitted;
-
-}
-
 namespace kn::eval {
 
-  struct Value;
+  class Value;
 
   enum class LabelCat {
     // not a valid label, used for sanity checking
@@ -153,7 +147,7 @@ namespace kn::eval {
 
   // prepare a program for execution
   // `offset` specifies how much to offset new addresses in the resultant code
-  ByteCode prepare(const parser::Emitted& program, std::size_t offset = 0);
+  ByteCode prepare(const std::vector<Operation>& program, std::size_t offset = 0);
 
   // run a prepared program
   void run(ByteCode program);

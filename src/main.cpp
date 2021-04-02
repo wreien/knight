@@ -7,6 +7,7 @@
 #include "error.hpp"
 #include "eval.hpp"
 #include "funcs.hpp"
+#include "ir.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 
@@ -29,11 +30,12 @@ int main(int argc, char** argv) {
 
   try {
     auto tokens = kn::lexer::tokenise(input);
-    auto program = kn::parser::parse(tokens);
+    auto parsed = kn::parser::parse(tokens);
+    auto program = kn::ir::optimise(parsed);
 
 #ifndef NDEBUG
-    std::cout << program;
-    std::cout << "\n\n===\n\n\n";
+    std::cout << parsed;
+    std::cout << "\n===\n\n\n";
 #endif
     auto bytecode = kn::eval::prepare(program);
 

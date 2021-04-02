@@ -11,6 +11,7 @@
 
 #include "env.hpp"
 #include "error.hpp"
+#include "ir.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "value.hpp"
@@ -325,7 +326,8 @@ namespace kn::funcs {
     }
 
     auto tokens = kn::lexer::tokenise(input);
-    auto program = kn::parser::parse(tokens);
+    auto parsed = kn::parser::parse(tokens);
+    auto program = kn::ir::optimise(parsed);
 
     // store offsets and prepare new bytecode
     auto new_offset = bytecode.size() + 2;  // see `eval::run`

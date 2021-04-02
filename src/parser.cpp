@@ -67,7 +67,7 @@ namespace {
 
 namespace kn::parser {
 
-  Emitted parse(const std::vector<kn::lexer::Token>& tokens) {
+  std::vector<Block> parse(const std::vector<kn::lexer::Token>& tokens) {
     if (tokens.empty())
       return {};
 
@@ -106,7 +106,7 @@ namespace kn::parser {
             top().add_child(fn({ 0, {}, 0, 0 }, info));
           } else {
             stack.push_back({ f_id, {}, arity, 0 });
-            // special case for blocks to track temporary numbers
+            // special case for blocks to track number of temporaries
             if (f_id == 'B') info.push_frame();
           }
         } else {
@@ -117,6 +117,7 @@ namespace kn::parser {
         throw kn::Error(it->range(), "error: unknown token type");
       }
 
+      // TODO: neaten?
       // fold in completed stacks
       while (top().is_completed()) {
         if (stack.size() == 1) {
@@ -126,14 +127,12 @@ namespace kn::parser {
           } else {
             auto res = std::move(top().children[0]);
             res.instructions.emplace_back(eval::OpCode::Return, res.result);
-            // add on the extra functions
-            for (auto&& block : info.blocks)
-              res.instructions.insert(
-                res.instructions.end(), block.begin(), block.end());
             // prepend the number of temporaries we need
             res.instructions.emplace_front(
               eval::OpCode::BlockData, eval::Label::from_constant(info.pop_frame()));
-            return res;
+            // add it to the list of blocks
+            info.blocks.insert(info.blocks.begin(), std::move(res.instructions));
+            return info.blocks;
           }
         } else {
           // pop the stack off, run the function, add to previous layer
