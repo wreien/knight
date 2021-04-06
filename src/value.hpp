@@ -179,6 +179,7 @@ namespace kn::eval {
   private:
     Type type;
     union {
+      Null null = Null{};
       bool boolean;
       Number::type number;
       String string;

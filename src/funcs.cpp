@@ -24,7 +24,7 @@ namespace {
     static Value to_return;
     switch (cp.label.cat()) {
     case LabelCat::Constant:
-      return (to_return = Number(cp.label.id()));
+      return (to_return = Number(static_cast<Number::type>(cp.label.id())));
     case LabelCat::JumpTarget:
       return (to_return = Block{ cp.label.id() });
     case LabelCat::Literal:
@@ -36,11 +36,13 @@ namespace {
     }
 #ifdef __GNUC__
     __builtin_unreachable();
+#elif _WIN32
+    __assume(0);
 #endif
   }
 
   void set_result(ByteCode& bytecode, std::size_t offset, const Value& v) {
-    Environment::get().assign(bytecode[offset + 1].label, std::move(v));
+    Environment::get().assign(bytecode[offset + 1].label, v);
   }
 
   void set_result(ByteCode& bytecode, std::size_t offset, Value&& v) {
@@ -119,7 +121,7 @@ namespace kn::funcs {
     assert(bytecode[offset].op == OpCode::Return);
 
     // we're leaving a frame, bump the call stack
-    auto value = get_value(bytecode[offset + 1]);
+    auto value = Value(get_value(bytecode[offset + 1]));
     auto [retaddr, result] = Environment::get().pop_frame();
     Environment::get().assign(result, std::move(value));
 
@@ -208,7 +210,9 @@ namespace kn::funcs {
   std::size_t exponent(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Exponent);
     return binary_math_op(bytecode, offset, [](Number lhs, Number rhs) {
-      return static_cast<Number>(std::pow(lhs.value, rhs.value)); });
+      auto result = static_cast<Number::type>(std::pow(lhs.value, rhs.value));
+      return static_cast<Number>(result);
+    });
   }
 
   // logical
@@ -242,7 +246,8 @@ namespace kn::funcs {
   std::size_t length(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Length);
     const auto& str = get_value(bytecode[offset + 2]).to_string();
-    set_result(bytecode, offset, static_cast<Number>(str.size()));
+    auto size = static_cast<Number::type>(str.size());
+    set_result(bytecode, offset, static_cast<Number>(size));
     return offset + 3;
   }
 
@@ -316,7 +321,7 @@ namespace kn::funcs {
     auto result = bytecode[offset + 1].label;
 
     // parse input and generate parsetree
-    const auto& input = get_value(bytecode[offset + 2]).to_string().as_str();
+    auto input = get_value(bytecode[offset + 2]).to_string().as_str();
     if (auto it = evals.find(input); it != evals.end()) {
       Environment::get().push_frame(
         offset + 3,

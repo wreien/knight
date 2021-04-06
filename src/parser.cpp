@@ -90,17 +90,17 @@ namespace kn::parser {
     // we finish iff (it == tokens.end() and expr_stack.size() == 1)
     auto it = tokens.begin();
     for (; it != tokens.end(); ++it) {
-      if (auto x = it->as_string_lit()) {
-        top().add_child(env.get_literal(std::string(x->data)));
+      if (auto s = it->as_string_lit()) {
+        top().add_child(env.get_literal(std::string(s->data)));
       }
-      else if (auto x = it->as_numeric_lit()) {
-        top().add_child(eval::Label::from_constant(x->data));
+      else if (auto n = it->as_numeric_lit()) {
+        top().add_child(eval::Label::from_constant(n->data));
       }
-      else if (auto x = it->as_ident()) {
-        top().add_child(env.get_variable(std::string(x->name)));
+      else if (auto i = it->as_ident()) {
+        top().add_child(env.get_variable(std::string(i->name)));
       }
-      else if (auto x = it->as_function()) {
-        auto f_id = static_cast<std::size_t>(x->id);
+      else if (auto f = it->as_function()) {
+        auto f_id = static_cast<std::size_t>(f->id);
         if (auto [arity, fn] = emitters[f_id]; fn) {
           if (arity == 0) {
             top().add_child(fn({ 0, {}, 0, 0 }, info));

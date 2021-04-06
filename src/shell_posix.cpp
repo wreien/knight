@@ -16,7 +16,7 @@ std::string kn::funcs::open_shell(const std::string& command) {
     throw kn::Error("error: unable to execute command: " + command);
 
   std::string result;
-  char buffer[4096];
+  char buffer[4096]{};
   while (auto read = ::fread(buffer, 1, sizeof buffer, stream.get()))
     result.append(buffer, read);
 

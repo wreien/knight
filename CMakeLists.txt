@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.15)
+cmake_policy(SET CMP0092 NEW)
 
-project(knight_cpp2 VERSION 0.1 LANGUAGES CXX)
+project(knight VERSION 0.1 LANGUAGES CXX)
 include(CheckIPOSupported)
 include(CheckCXXCompilerFlag)
 

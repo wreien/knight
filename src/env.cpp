@@ -96,6 +96,8 @@ namespace kn::eval {
     }
 #ifdef __GNUC__
     __builtin_unreachable();
+#elif _WIN32
+    __assume(0);
 #endif
   }
 
