@@ -20,13 +20,12 @@ using namespace kn::eval;
 
 namespace {
 
-  const Value& get_value(CodePoint cp) {
-    static Value to_return;
+  Value get_value(CodePoint cp) {
     switch (cp.label.cat()) {
     case LabelCat::Constant:
-      return (to_return = Number(static_cast<Number::type>(cp.label.id())));
+      return Number(static_cast<Number::type>(cp.label.id()));
     case LabelCat::JumpTarget:
-      return (to_return = Block{ cp.label.id() });
+      return Block{ cp.label.id() };
     case LabelCat::Literal:
     case LabelCat::Temporary:
     case LabelCat::Variable:
@@ -51,7 +50,7 @@ namespace {
 
   template <typename F>
   std::size_t binary_math_op(ByteCode& bytecode, std::size_t offset, F f) {
-    auto& lhs = get_value(bytecode[offset + 2]);
+    auto lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
@@ -63,7 +62,7 @@ namespace {
 
   template <typename F>
   std::size_t binary_compare_op(ByteCode& bytecode, std::size_t offset, F f) {
-    auto& lhs = get_value(bytecode[offset + 2]);
+    auto lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
@@ -157,7 +156,7 @@ namespace kn::funcs {
   std::size_t plus(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Plus);
 
-    auto& lhs = get_value(bytecode[offset + 2]);
+    auto lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
@@ -176,7 +175,7 @@ namespace kn::funcs {
   std::size_t multiplies(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Multiplies);
 
-    auto& lhs = get_value(bytecode[offset + 2]);
+    auto lhs = get_value(bytecode[offset + 2]);
     if (lhs.is_number()) {
       auto x = lhs.to_number();
       auto y = get_value(bytecode[offset + 3]).to_number();
@@ -236,8 +235,8 @@ namespace kn::funcs {
 
   std::size_t equals(ByteCode& bytecode, std::size_t offset) {
     assert(bytecode[offset].op == OpCode::Equals);
-    auto& lhs = get_value(bytecode[offset + 2]);
-    auto& rhs = get_value(bytecode[offset + 3]);
+    auto lhs = get_value(bytecode[offset + 2]);
+    auto rhs = get_value(bytecode[offset + 3]);
     set_result(bytecode, offset, lhs == rhs);
     return offset + 4;
   }
@@ -322,7 +321,12 @@ namespace kn::funcs {
 
     // parse input and generate parsetree
     auto input = get_value(bytecode[offset + 2]).to_string().as_str();
-    if (auto it = evals.find(input); it != evals.end()) {
+    if (input.empty()) {
+      // nothing to evaluate, not much we can do
+      // just assign NULL to the output and off we go
+      set_result(bytecode, offset, Null{});
+      return next_statement;
+    } else if (auto it = evals.find(input); it != evals.end()) {
       Environment::get().push_frame(
         offset + 3,
         bytecode[offset + 1].label,
@@ -331,6 +335,12 @@ namespace kn::funcs {
     }
 
     auto tokens = kn::lexer::tokenise(input);
+    if (tokens.empty()) {
+      // if they just gave a string full of blanks or something
+      set_result(bytecode, offset, Null{});
+      return next_statement;
+    }
+
     auto parsed = kn::parser::parse(tokens);
     auto program = kn::ir::optimise(parsed);
 

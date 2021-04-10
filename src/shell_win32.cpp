@@ -46,6 +46,8 @@ namespace {
 }
 
 std::string kn::funcs::open_shell(const std::string& command) {
+  using namespace std::literals;
+
   auto attrs = SECURITY_ATTRIBUTES{};
   attrs.nLength = sizeof attrs;
   attrs.bInheritHandle = TRUE;
@@ -100,6 +102,12 @@ std::string kn::funcs::open_shell(const std::string& command) {
   while (ReadFile(stdout_read.get(), buffer, sizeof buffer, &read, nullptr)
          and read != 0)
     result.append(buffer, read);
+
+  // convert \r\n into \n
+  for (auto pos = result.find("\r\n"sv);
+       pos != std::string::npos;
+       pos = result.find("\r\n"sv, pos))
+    result.erase(pos, 1);
 
   return result;
 }

@@ -134,7 +134,7 @@ namespace kn::eval {
     }
 
     // now we do our mapping back into the offset table
-    for (auto [x, id] : local_offsets) {
+    for (auto&& [x, id] : local_offsets) {
       if (auto it = labels.find(id); it != labels.end())
         rewritten[x] = CodePoint(Label(LabelCat::JumpTarget, it->second));
     }
