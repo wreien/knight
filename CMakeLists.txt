@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
+cmake_policy(SET CMP0091 NEW)
 cmake_policy(SET CMP0092 NEW)
 
 project(knight VERSION 0.1 LANGUAGES CXX)
@@ -16,6 +17,7 @@ set_target_properties(knight PROPERTIES
     CXX_EXTENSIONS NO
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES
+    MSVC_RUNTIME_LIBRARY "$<$<CXX_COMPILER_ID:Clang>:MultiThreaded>"
 )
 
 target_sources(knight PRIVATE
@@ -49,7 +51,9 @@ endif()
 
 check_ipo_supported(RESULT IS_IPO_SUPPORTED)
 if(IS_IPO_SUPPORTED)
-    set_target_properties(knight PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE YES)
+    set_target_properties(knight PROPERTIES
+        INTERPROCEDURAL_OPTIMIZATION_RELEASE YES
+        INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO YES)
 endif()
 
 set(SANITISERS "$<$<CONFIG:Debug>:-fsanitize=undefined,address;-fno-omit-frame-pointer>")

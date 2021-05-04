@@ -7,9 +7,15 @@
 
 namespace {
   kn::eval::Number string_to_number(const kn::eval::String& s) {
-    // not in spec, but tests require "+34" to be parsed as 34
     auto sv = s.as_str_view();
-    auto i = sv.find_first_not_of("\t\n\r +");
+    auto i = sv.find_first_not_of("\t\n\r ");
+    if (i == std::string_view::npos)
+      return 0;
+    if (sv[i] == '+') {
+      ++i;
+      if (i == sv.size() or sv[i] == '-')
+        return 0;
+    }
 
     // explicitly do no error checking
     kn::eval::Number::type result = 0;
@@ -17,15 +23,14 @@ namespace {
     return result;
   }
 
-  kn::eval::String true_str(std::string("true"));
-  kn::eval::String false_str(std::string("false"));
-  kn::eval::String null_str(std::string("null"));
+  kn::eval::String true_str(std::string_view("true"));
+  kn::eval::String false_str(std::string_view("false"));
+  kn::eval::String null_str(std::string_view("null"));
 
-  constexpr auto value_offset = 2 * sizeof(std::size_t);
+  constexpr auto value_offset = sizeof(std::size_t);
   char* alloc_string(std::size_t size) {
     auto p = static_cast<char*>(::operator new(value_offset + size));
-    new (p) std::size_t{ size };
-    new (p + sizeof(std::size_t)) std::size_t{ 1 };
+    new (p) std::size_t{ 1 };
     return p;
   }
 }
@@ -34,24 +39,38 @@ namespace kn::eval {
 
   String::String(std::string_view value)
     : m_data(alloc_string(value.size()))
+    , m_pos(0)
+    , m_size(value.size())
   {
     auto p = static_cast<char*>(m_data);
     std::uninitialized_copy(value.begin(), value.end(), p + value_offset);
   }
 
   String String::substr(std::size_t pos, std::size_t len) const {
-    return String(as_str_view().substr(pos, len));
+    assert(pos < m_size);
+    assert(pos + len <= m_size);
+
+    ++num_refs();
+    return String(m_data, m_pos + pos, len);
   }
 
   String String::replace(std::size_t pos, std::size_t len, const String& other) const {
-    auto p = alloc_string(size() - len + other.size());
+    assert(pos < m_size);
+    assert(pos + len <= m_size);
+
+    if (pos == 0 and other.size() == 0) {
+      return substr(len, m_size - len);
+    }
+
+    auto new_size = size() - len + other.size();
+    auto p = alloc_string(new_size);
     std::uninitialized_copy(
       value(), value() + pos, p + value_offset);
     std::uninitialized_copy(
       other.value(), other.value() + other.size(), p + value_offset + pos);
     std::uninitialized_copy(
       value() + pos + len, value() + size(), p + value_offset + pos + other.size());
-    return String(p);
+    return String(p, 0, new_size);
   }
 
   void String::output(std::ostream& os) const {
@@ -65,25 +84,27 @@ namespace kn::eval {
   }
 
   String operator+(const String& lhs, const String& rhs) {
-    auto p = alloc_string(lhs.size() + rhs.size());
+    auto s = lhs.size() + rhs.size();
+    auto p = alloc_string(s);
     std::uninitialized_copy(
       lhs.value(), lhs.value() + lhs.size(), p + value_offset);
     std::uninitialized_copy(
       rhs.value(), rhs.value() + rhs.size(), p + value_offset + lhs.size());
-    return String(p);
+    return String(p, 0, s);
   }
 
   String operator*(const String& lhs, Number rhs) {
     auto num = static_cast<std::size_t>(rhs);
-    auto p = alloc_string(lhs.size() * num);
+    auto s = lhs.size() * num;
+    auto p = alloc_string(s);
 
-    auto value = p + 2 * sizeof(std::size_t);
+    auto value = p + value_offset;
     while (num--) {
       std::uninitialized_copy(lhs.value(), lhs.value() + lhs.size(), value);
       value += lhs.size();
     }
 
-    return String(p);
+    return String(p, 0, s);
   }
 
 

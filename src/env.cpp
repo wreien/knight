@@ -53,7 +53,7 @@ namespace kn::eval {
     return { LabelCat::Variable, it->second };
   }
 
-  Label Environment::get_literal(std::string s) {
+  Label Environment::get_string_literal(std::string s) {
     auto [it, inserted] = stringlit_map.try_emplace(s, literals.size());
     if (inserted) {
       literals.emplace_back(String(std::move(s)));
@@ -114,7 +114,18 @@ namespace kn::eval {
   }
 #endif
 
-  const Value& Environment::assign(Label v, Value x) {
+  const Value& Environment::assign(Label v, Value&& x) {
+    // must be a variable or temporary to write to it
+    assert(v.cat() == LabelCat::Variable or v.cat() == LabelCat::Temporary);
+
+    if (v.cat() == LabelCat::Variable) {
+      return values[v.id()].emplace(std::move(x));
+    } else {
+      return temps()[v.id()].emplace(std::move(x));
+    }
+  }
+
+  const Value& Environment::assign(Label v, const Value& x) {
     // must be a variable or temporary to write to it
     assert(v.cat() == LabelCat::Variable or v.cat() == LabelCat::Temporary);
 

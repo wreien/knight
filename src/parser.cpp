@@ -91,7 +91,7 @@ namespace kn::parser {
     auto it = tokens.begin();
     for (; it != tokens.end(); ++it) {
       if (auto s = it->as_string_lit()) {
-        top().add_child(env.get_literal(std::string(s->data)));
+        top().add_child(env.get_string_literal(std::string(s->data)));
       }
       else if (auto n = it->as_numeric_lit()) {
         top().add_child(eval::Label::from_constant(n->data));

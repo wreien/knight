@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <memory>
 #include <string>
+#include <iterator>
 
 #include "funcs.hpp"
 #include "error.hpp"
@@ -100,14 +101,14 @@ std::string kn::funcs::open_shell(const std::string& command) {
   char buffer[4096]{};
   auto read = DWORD{};
   while (ReadFile(stdout_read.get(), buffer, sizeof buffer, &read, nullptr)
-         and read != 0)
-    result.append(buffer, read);
-
-  // convert \r\n into \n
-  for (auto pos = result.find("\r\n"sv);
-       pos != std::string::npos;
-       pos = result.find("\r\n"sv, pos))
-    result.erase(pos, 1);
+         and read != 0) {
+    // convert \r\n into \n
+    for (auto it = buffer; it != buffer + read; ++it) {
+      if (*it == '\r' and *std::next(it) == '\n')
+        ++it;
+      result.push_back(*it);
+    }
+  }
 
   return result;
 }

@@ -40,19 +40,36 @@ namespace kn::eval {
 
     ~String() { release(); }
 
-    String(const String& other) : m_data(other.m_data) { ++num_refs(); }
-    String(String&& other) noexcept : m_data(std::exchange(other.m_data, nullptr)) {}
+    String(const String& other)
+      : m_data(other.m_data)
+      , m_pos(other.m_pos)
+      , m_size(other.m_size)
+    { ++num_refs(); }
+
+    String(String&& other) noexcept
+      : m_data(std::exchange(other.m_data, nullptr))
+      , m_pos(std::exchange(other.m_pos, 0))
+      , m_size(std::exchange(other.m_size, 0))
+    {}
 
     String& operator=(const String& other) {
       if (this != &other) {
         release();
         m_data = other.m_data;
+        m_pos = other.m_pos;
+        m_size = other.m_size;
         ++num_refs();
       }
       return *this;
     }
+
     String& operator=(String&& other) noexcept {
-      m_data = std::exchange(other.m_data, nullptr);
+      if (this != &other) {
+        release();
+        m_data = std::exchange(other.m_data, nullptr);
+        m_pos = std::exchange(other.m_pos, 0);
+        m_size = std::exchange(other.m_size, 0);
+      }
       return *this;
     }
 
@@ -65,7 +82,7 @@ namespace kn::eval {
 
     // some functions that this is used for
     std::size_t size() const noexcept {
-      return *std::launder(reinterpret_cast<std::size_t*>(m_data));
+      return m_size;
     }
 
     String substr(std::size_t pos, std::size_t len) const;
@@ -76,23 +93,32 @@ namespace kn::eval {
     friend String operator*(const String& lhs, Number rhs);
 
     friend bool operator==(const String& a, const String& b) noexcept {
-      return a.m_data == b.m_data or a.as_str_view() == b.as_str_view();
+      return (a.m_data == b.m_data and a.m_pos == b.m_pos and a.m_size == b.m_size)
+          or a.as_str_view() == b.as_str_view();
     }
     friend std::ostream& operator<<(std::ostream& os, const String& s) {
       return os << s.as_str_view();
     }
 
   private:
-    explicit String(void* data) : m_data(data) {}
-    void* m_data = nullptr;
+    explicit String(void* data, std::size_t pos, std::size_t size)
+      : m_data(data), m_pos(pos), m_size(size)
+    {}
 
-    std::size_t& num_refs() noexcept {
-      return *std::launder(reinterpret_cast<std::size_t*>(
-          static_cast<char*>(m_data) + sizeof(std::size_t)));
+    void* m_data;
+    std::size_t m_pos;
+    std::size_t m_size;
+
+    std::size_t& num_refs() const noexcept {
+      return *std::launder(reinterpret_cast<std::size_t*>(m_data));
+    }
+
+    const char* raw_value() const noexcept {
+      return std::launder(static_cast<const char*>(m_data) + sizeof(std::size_t));
     }
 
     const char* value() const noexcept {
-      return static_cast<const char*>(m_data) + 2 * sizeof(std::size_t);
+      return raw_value() + m_pos;
     }
 
     void release() noexcept {

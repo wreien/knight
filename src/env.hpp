@@ -25,7 +25,8 @@ namespace kn::eval {
     Label get_variable(const std::string& name);
     Label get_variable(std::string&& name);
 
-    Label get_literal(std::string s);
+    Label get_string_literal(std::string s);
+
     Label get_literal(Boolean b) const noexcept;
     Label get_literal(Null) const noexcept;
 
@@ -33,7 +34,8 @@ namespace kn::eval {
 
     bool has_value(Label v) const;
     const Value& value(Label v) const;
-    const Value& assign(Label v, Value x);
+    const Value& assign(Label v, Value&& x);
+    const Value& assign(Label v, const Value& x);
 
 #ifndef NDEBUG
     void dump_vars() const;
