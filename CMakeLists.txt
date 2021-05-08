@@ -9,6 +9,7 @@ include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-march=native" COMPILER_SUPPORTS_MARCH_NATIVE)
 option(OPTIMISE_NATIVE "Release builds use -march=native, if available"
     ${COMPILER_SUPPORTS_MARCH_NATIVE})
+option(HAS_DEBUGGER "Enable builtin knight code debugger" OFF)
 
 add_executable(knight)
 set_target_properties(knight PROPERTIES
@@ -21,7 +22,6 @@ set_target_properties(knight PROPERTIES
 )
 
 target_sources(knight PRIVATE
-    src/debug.hpp
     src/emit.cpp
     src/emit.hpp
     src/env.cpp
@@ -63,6 +63,10 @@ target_compile_options(knight PRIVATE
     "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
 target_link_libraries(knight PRIVATE
     "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:${SANITISERS}>")
+
+if(HAS_DEBUGGER)
+    target_compile_definitions(knight PRIVATE KN_HAS_DEBUGGER)
+endif()
 
 if(OPTIMISE_NATIVE AND COMPILER_SUPPORTS_MARCH_NATIVE)
     target_compile_options(knight PRIVATE "$<$<CONFIG:Release>:-march=native>")

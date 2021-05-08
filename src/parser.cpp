@@ -125,7 +125,7 @@ namespace kn::parser {
           if (++it != tokens.end()) {
             throw kn::Error(it->pos(), "error: unparsed tokens");
           } else {
-            auto res = std::move(top().children[0]);
+            auto& res = top().children[0];
             res.instructions.emplace_back(eval::OpCode::Return, res.result);
             // prepend the number of temporaries we need
             res.instructions.emplace_front(

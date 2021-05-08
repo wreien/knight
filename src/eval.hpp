@@ -10,8 +10,6 @@ namespace kn::eval {
   class Value;
 
   enum class LabelCat {
-    // not a valid label, used for sanity checking
-    Unused,
     // immutable: a number, e.g. 100
     Constant,
     // mutable: a variable, can be assigned to
@@ -35,7 +33,7 @@ namespace kn::eval {
     }
 
     Label()
-      : Label(LabelCat::Unused, 0)
+      : Label(LabelCat::Constant, 0)
     {}
 
     static Label from_constant(int n) {
@@ -73,8 +71,8 @@ namespace kn::eval {
     }
 
   private:
-    static constexpr std::size_t cat_mask = 0b111;
     static constexpr std::size_t shift = 3;
+    static constexpr std::size_t cat_mask = (1 << shift) - 1;
     std::size_t m_data;
   };
 
@@ -152,7 +150,7 @@ namespace kn::eval {
   // run a prepared program
   void run(ByteCode program);
 
-#ifndef NDEBUG
+#ifdef KN_HAS_DEBUGGER
   // step through a prepared program
   void debug(ByteCode program);
 #endif

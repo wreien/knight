@@ -35,9 +35,8 @@ namespace kn::eval {
     bool has_value(Label v) const;
     const Value& value(Label v) const;
     const Value& assign(Label v, Value&& x);
-    const Value& assign(Label v, const Value& x);
 
-#ifndef NDEBUG
+#ifdef KN_HAS_DEBUGGER
     void dump_vars() const;
 #endif
 

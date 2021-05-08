@@ -1,6 +1,5 @@
 #include "emit.hpp"
 
-#include <iostream>
 #include <cassert>
 
 #include "env.hpp"
@@ -165,9 +164,6 @@ namespace kn::parser::emit {
 
     // must be an identifier, always no instructions
     auto var = ast.children[0].result;
-    for (auto&& i : ast.children[0].instructions) {
-      std::cout << static_cast<int>(i.op) << std::endl;
-    }
     assert(ast.children[0].instructions.empty());
 
     auto& x = ast.children[1];

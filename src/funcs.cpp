@@ -30,8 +30,6 @@ namespace {
     case LabelCat::Temporary:
     case LabelCat::Variable:
       return Environment::get().value(cp.label);
-    case LabelCat::Unused:
-      throw kn::Error("error: read placeholder value while evaluating");
     }
 #ifdef __GNUC__
     __builtin_unreachable();

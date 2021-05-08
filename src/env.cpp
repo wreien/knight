@@ -1,9 +1,10 @@
 #include "env.hpp"
-
 #include <cassert>
-#include <iostream>
-
 #include "error.hpp"
+
+#ifdef KN_HAS_DEBUGGER
+#include <iostream>
+#endif
 
 namespace kn::eval {
 
@@ -101,7 +102,7 @@ namespace kn::eval {
 #endif
   }
 
-#ifndef NDEBUG
+#ifdef KN_HAS_DEBUGGER
   void Environment::dump_vars() const {
     for (std::size_t i = 0; i < values.size(); ++i) {
       std::cout << "[v:" << i << "] " << names[i] << " => ";
@@ -115,17 +116,6 @@ namespace kn::eval {
 #endif
 
   const Value& Environment::assign(Label v, Value&& x) {
-    // must be a variable or temporary to write to it
-    assert(v.cat() == LabelCat::Variable or v.cat() == LabelCat::Temporary);
-
-    if (v.cat() == LabelCat::Variable) {
-      return values[v.id()].emplace(std::move(x));
-    } else {
-      return temps()[v.id()].emplace(std::move(x));
-    }
-  }
-
-  const Value& Environment::assign(Label v, const Value& x) {
     // must be a variable or temporary to write to it
     assert(v.cat() == LabelCat::Variable or v.cat() == LabelCat::Temporary);
 

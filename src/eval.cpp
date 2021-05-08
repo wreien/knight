@@ -7,8 +7,7 @@
 #include <vector>
 #include <unordered_map>
 
-#ifndef NDEBUG
-#include "debug.hpp"
+#ifdef KN_HAS_DEBUGGER
 #include <cstring>
 #include <iostream>
 #include <iomanip>
@@ -163,16 +162,112 @@ namespace kn::eval {
     }
   }
 
-#ifndef NDEBUG
+#ifdef KN_HAS_DEBUGGER
   namespace {
 
-    void print_whole_program(const ByteCode& program) {
+    std::ostream& print_label(std::ostream& os, Label l) {
+      switch (l.cat()) {
+      case LabelCat::Constant:
+        return os << "$" << l.id();
+      case LabelCat::Variable:
+        return os << "{" << Environment::get().nameof(l) << "}";
+      case LabelCat::Temporary:
+        return os << "[t:" << l.id() << "]";
+      case LabelCat::Literal:
+        return os << Environment::get().value(l);
+      case LabelCat::JumpTarget:
+        return os << ">" << l.id();
+      default:
+        return os << "!!";
+      }
+    }
+
+    std::ostream& print_opcode(std::ostream& os, OpCode op) {
+      switch (op) {
+      case kn::eval::OpCode::NoOp:
+        return os << "0   ";
+      case kn::eval::OpCode::Label:
+        return os << "#l  ";
+      case kn::eval::OpCode::BlockData:
+        return os << "#b  ";
+      case kn::eval::OpCode::Call:
+        return os << "cl  ";
+      case kn::eval::OpCode::Return:
+        return os << "ret ";
+      case kn::eval::OpCode::Jump:
+        return os << "jmp ";
+      case kn::eval::OpCode::JumpIf:
+        return os << "jy  ";
+      case kn::eval::OpCode::JumpIfNot:
+        return os << "jn  ";
+
+        // arithmetic
+      case kn::eval::OpCode::Plus:
+        return os << "add ";
+      case kn::eval::OpCode::Minus:
+        return os << "sub ";
+      case kn::eval::OpCode::Multiplies:
+        return os << "mul ";
+      case kn::eval::OpCode::Divides:
+        return os << "div ";
+      case kn::eval::OpCode::Modulus:
+        return os << "mod ";
+      case kn::eval::OpCode::Exponent:
+        return os << "exp ";
+
+        // logical
+      case kn::eval::OpCode::Negate:
+        return os << "neg ";
+      case kn::eval::OpCode::Less:
+        return os << "lt  ";
+      case kn::eval::OpCode::Greater:
+        return os << "gt  ";
+      case kn::eval::OpCode::Equals:
+        return os << "eq  ";
+
+        // string
+      case kn::eval::OpCode::Length:
+        return os << "len ";
+      case kn::eval::OpCode::Get:
+        return os << "get ";
+      case kn::eval::OpCode::Substitute:
+        return os << "sub ";
+
+        // environment
+      case kn::eval::OpCode::Assign:
+        return os << "=   ";
+      case kn::eval::OpCode::Prompt:
+        return os << "inp ";
+      case kn::eval::OpCode::Output:
+        return os << "out ";
+      case kn::eval::OpCode::Random:
+        return os << "rnd ";
+      case kn::eval::OpCode::Shell:
+        return os << "sh  ";
+      case kn::eval::OpCode::Quit:
+        return os << "q   ";
+      case kn::eval::OpCode::Eval:
+        return os << "evl ";
+      case kn::eval::OpCode::Dump:
+        return os << "dmp ";
+
+      case kn::eval::OpCode::NumberOfOps:
+        break;
+      }
+      return os;
+    }
+
+    void print_whole_program(std::ostream& os, std::size_t curr, std::size_t brk, const ByteCode& program) {
       for (std::size_t offset = 0; offset < program.size(); ++offset) {
-        std::cout << std::setw(6) << offset << ": " << program[offset].op;
+        if (offset == curr) os << '>';
+        else if (offset == brk) os << '!';
+        else os << ' ';
+        os << std::setw(5) << offset << ": ";
+        print_opcode(os, program[offset].op);
         for (int i = 0; i < get_num_labels(program[offset].op); ++i)
-          std::cout << program[offset + (std::size_t)i + 1].label << ' ';
+          print_label(os, program[offset + (std::size_t)i + 1].label) << ' ';
         offset += (std::size_t)get_num_labels(program[offset].op);
-        std::cout << '\n';
+        os << '\n';
       }
     }
 
@@ -189,22 +284,32 @@ namespace kn::eval {
     assert(program[0].op == OpCode::BlockData);
     Environment::get().push_frame(end_pos, retval, program[1].label.id());
 
-    std::cout << std::right;
-    std::cout << "assembled:\n";
-    print_whole_program(program);
-
-    std::cout << "\n\nStarting debugging:\n\n";
     std::size_t offset = 2;  // see comment in `run`
     std::size_t old_size = program.size();
-    std::size_t breakpoint = 0;
+    std::size_t breakpoint = -1;
 
+    std::cout << std::right;
+    std::cout << "assembled:\n";
+    print_whole_program(std::cout, offset, breakpoint, program);
+
+    std::cout << "\n\nStarting debugging:\n\n";
     while (offset < program.size()) {
       auto op = program[offset].op;
-      std::cout << std::setw(4) << offset << "[" << op << "]> ";
+      std::cout << std::setw(4) << offset << "[";
+      print_opcode(std::cout, op);
+      std::cout << "]> ";
+
       std::string inp;
-      std::getline(std::cin, inp);
+      if (not std::getline(std::cin, inp)) {
+        std::cout << "exit.\n";
+        std::exit(0);
+      }
+      // entering nothing goes to the next statement
+      if (inp.empty())
+        inp = "n";
+
       if (inp[0] == 'l') {
-        print_whole_program(program);
+        print_whole_program(std::cout, offset, breakpoint, program);
       } else if (inp[0] == 'p') {
         std::string command;
         std::size_t varid;
@@ -221,7 +326,6 @@ namespace kn::eval {
       } else if (inp[0] == 'n') {
         offset = get_function(op)(program, offset);
         if (program.size() != old_size) {
-          std::cout << "!!EVAL\n";
           old_size = program.size();
         }
       } else if (inp[0] == 'c') {
